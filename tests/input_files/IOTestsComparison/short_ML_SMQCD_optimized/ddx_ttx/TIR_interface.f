@@ -63,6 +63,7 @@ C
 C     GLOBAL VARIABLES
 C     
       INCLUDE 'MadLoopParams.inc'
+
       INCLUDE 'coupl.inc'
       INTEGER CTMODE
       REAL*8 LSCALE
@@ -377,7 +378,7 @@ C
 C     This list specifies what loop involve an Higgs effective vertex
 C      so that CutTools limitations can be correctly implemented
       LOGICAL HAS_AN_HEFT_VERTEX(NLOOPGROUPS)
-      DATA (HAS_AN_HEFT_VERTEX(I),I=     1,     8) /.TRUE.,.FALSE.
+      DATA (HAS_AN_HEFT_VERTEX(I),I=     1,     8) /.FALSE.,.FALSE.
      $ ,.FALSE.,.FALSE.,.FALSE.,.FALSE.,.FALSE.,.FALSE./
 C     
 C     GLOBAL VARIABLES

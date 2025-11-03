@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 ################################################################################
 #
 # Copyright (c) 2009 The MadGraph5_aMC@NLO Development team and Contributors
@@ -14,7 +14,6 @@
 #
 ################################################################################
 from __future__ import absolute_import
-from __future__ import print_function
 import os
 import sys
 import logging
@@ -84,8 +83,8 @@ class Compile_MG5:
 
     def test_output_NLO(self):
         """do the output of a simple LO process to ensure that LO is correctly configure."""
-        self.cmd.exec_cmd('generate p p > e+ ve [QCD]')
-        self.cmd.exec_cmd('output %s/TESTNLO' %root_path)
+        self.cmd.run_cmd('generate p p > e+ ve [QCD]')
+        self.cmd.run_cmd('output %s/TESTNLO' %root_path)
         shutil.rmtree('%s/TESTNLO' % root_path)
 
     @staticmethod
@@ -219,7 +218,7 @@ class Compile_MG5:
             # in case there is #FC -> FC 
             #search file in src
             file_to_change=misc.find_makefile_in_dir(os.path.join(iregi_path,'src'))
-            comp_re = re.compile('^(\s*)#FC\s*=\s*(.+)\s*$')
+            comp_re = re.compile(r'^(\s*)#FC\s*=\s*(.+)\s*$')
             var = 'FC'
             mod = False
             for name in file_to_change:
@@ -256,7 +255,7 @@ class Compile_MG5:
         else:
             #search file in src
             file_to_change=misc.find_makefile_in_dir(os.path.join(iregi_path,'src'))
-            comp_re = re.compile('^(\s*)FC\s*=\s*(.+)\s*$')
+            comp_re = re.compile(r'^(\s*)FC\s*=\s*(.+)\s*$')
             var = 'FC'
             mod = False
             for name in file_to_change:
@@ -295,9 +294,9 @@ class Compile_MG5:
 
     def precompilation(self, debug=False):
         if debug:
-            subprocess.call('python -m compileall .', shell=True, cwd=root_path)            
+            subprocess.call('python3 -m compileall .', shell=True, cwd=root_path)            
         else:
-            subprocess.call('python -O -m compileall .', shell=True, cwd=root_path)
+            subprocess.call('python3 -O -m compileall .', shell=True, cwd=root_path)
 
 if __name__ == '__main__':
     Compile_MG5(sys.argv[1:])

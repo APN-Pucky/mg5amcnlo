@@ -56,6 +56,7 @@ class UFOModel(object):
         as empty."""
         self.modelpath = modelpath
         model = ufomodels.load_model(modelpath)
+        self.model = model
         # Check the validity of the model. Too old UFO (before UFO 1.0)
         if not hasattr(model, 'all_orders'):
             raise USRMODERROR('Base Model doesn\'t follows UFO convention (no couplings_order information)\n' +\
@@ -239,6 +240,8 @@ class UFOModel(object):
             return 'L.%s' % repr(param)
         elif param.__class__.__name__ == 'Particle':
             return 'P.%s' % repr(param)
+        elif param.__class__.__name__ == 'Propagator':
+            return 'Propa.%s' % repr(param)        
         elif param is None:
             return 'None'
         else:
@@ -338,6 +341,9 @@ from object_library import all_particles, Particle
 import parameters as Param
 
 """
+        if self.propagators:
+            text += "import propagators as Propa\n"
+            
         text += self.create_file_content(self.particles)
         ff = open(os.path.join(outputdir, 'particles.py'), 'w')
         ff.writelines(text)
@@ -492,7 +498,7 @@ from object_library import all_propagators, Propagator
         """Copy/merge the routines written in Fortran/C++/pyhton"""
         
         #1. Special case for the formfactor written in Fortran
-        re_fct = re.compile('''^\s{7,70}[\w\s]*function (\w*)\(''',re.M+re.I)
+        re_fct = re.compile(r'''^\s{7,70}[\w\s]*function (\w*)\(''',re.M+re.I)
         present_fct = set()
         for dirpath in self.all_path:
             if os.path.exists(pjoin(dirpath, 'Fortran', 'functions.f')):
@@ -680,6 +686,8 @@ from object_library import all_propagators, Propagator
             logger.info('The two model defines the block \'%s\' with id \'%s\' with different parameter name \'%s\', \'%s\'\n'\
                       %  (old_param.lhablock, old_param.lhacode, parameter.name, old_param.name) + \
             '     We will merge those two parameters in a single one')
+            if parameter.texname == 'no_restrict':
+                self.new_external.append(parameter)
             if parameter.name in list(self.old_new.values()):
                 key = [k for k in self.old_new if self.old_new[k] == parameter.name][0]
                 self.old_new[key] = old_param.name

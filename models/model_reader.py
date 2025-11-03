@@ -65,6 +65,8 @@ class ModelReader(loop_base_objects.LoopModel):
         couplings, plus add new dictionary coupling_dict from
         parameter name to value."""
 
+        all_params = {}
+
         param_card_text = None
         # Extract external parameters
         external_parameters = self['parameters'][('external',)]
@@ -85,9 +87,10 @@ class ModelReader(loop_base_objects.LoopModel):
                     raise MadGraph5Error("No such file %s" % param_card)
                 param_card_text = param_card
                 param_card = card_reader.ParamCard(param_card)
-                for param in param_card.get('decay'):
-                    if str(param.value).lower() == 'auto':
-                        param.value = auto_width(param_card, param.lhacode)
+                if 'decay' in param_card:
+                    for param in param_card.get('decay'):
+                        if str(param.value).lower() == 'auto':
+                            param.value = auto_width(param_card, param.lhacode)
             #misc.sprint(type(param_card), card_reader.ParamCard,  isinstance(param_card, card_reader.ParamCard))
             #assert isinstance(param_card, card_reader.ParamCard),'%s is not a ParamCard: %s' % (type(param_card),  isinstance(param_card, card_reader.ParamCard))    
             
@@ -101,7 +104,6 @@ class ModelReader(loop_base_objects.LoopModel):
             key = [k for k in param_card.keys() if not k.startswith('qnumbers ')
                                             and not k.startswith('decay_table')
                                             and 'info' not in k]
-            param_key = [k for k in parameter_dict.keys() if 'info' not in k]
             
             if set(key) != set(parameter_dict.keys()):
                 # the two card are different. check if this critical
@@ -201,7 +203,7 @@ class ModelReader(loop_base_objects.LoopModel):
                                 raise
                             
                     exec("locals()[\'%s\'] = %s" % (parameter_dict[block][pid].name,
-                                          value))
+                                          value), all_params)
                     parameter_dict[block][pid].value = float(value)
            
         else:
@@ -210,14 +212,13 @@ class ModelReader(loop_base_objects.LoopModel):
                 if scale and parameter_dict[block][id].name == 'aS':
                     runner = Alphas_Runner(value, nloop=3)
                     value = runner(scale)
-                exec("locals()[\'%s\'] = %s" % (param.name, param.value))
-
+                exec("locals()[\'%s\'] = %s" % (param.name, param.value), globals(), all_params)
             
         # Define all functions used
         for func in self['functions']:
             exec("def %s(%s):\n   return %s" % (func.name,
                                                 ",".join(func.arguments),
-                                                func.expr))
+                                                func.expr), globals(), all_params)
 
         # Extract derived parameters
         derived_parameters = []
@@ -230,12 +231,12 @@ class ModelReader(loop_base_objects.LoopModel):
         # Now calculate derived parameters
         for param in derived_parameters:
             try:
-                exec("locals()[\'%s\'] = %s" % (param.name, param.expr))
+                exec("locals()[\'%s\'] = %s" % (param.name, param.expr), globals(), all_params)
             except Exception as error:
                 msg = 'Unable to evaluate %s = %s: raise error: %s' % (param.name,param.expr, error)
                 raise MadGraph5Error(msg)
-            param.value = complex(eval(param.name))
-            if not eval(param.name) and eval(param.name) != 0:
+            param.value = complex(all_params[param.name])
+            if not all_params[param.name] and all_params[param.name] != 0:
                 logger.warning("%s has no expression: %s" % (param.name,
                                                              param.expr))
 
@@ -244,18 +245,18 @@ class ModelReader(loop_base_objects.LoopModel):
         for particle in self.get('particles'):
             if particle.is_fermion() and particle.get('self_antipart') and \
                    particle.get('width').lower() != 'zero' and \
-                   eval(particle.get('mass')).real < 0:
+                   eval(particle.get('mass'), globals(), all_params).real < 0:
                 exec("locals()[\'%(width)s\'] = -abs(%(width)s)" % \
-                     {'width': particle.get('width')})
+                     {'width': particle.get('width')}, globals(), all_params)
 
         # Extract couplings
         couplings = sum(list(self['couplings'].values()), [])
         # Now calculate all couplings
         for coup in couplings:
             #print "I execute %s = %s"%(coup.name, coup.expr)
-            exec("locals()[\'%s\'] = %s" % (coup.name, coup.expr))
-            coup.value = complex(eval(coup.name))
-            if not eval(coup.name) and eval(coup.name) != 0:
+            exec("locals()[\'%s\'] = %s" % (coup.name, coup.expr), globals(), all_params)
+            coup.value = complex(all_params[coup.name])
+            if not all_params[coup.name] and all_params[coup.name] != 0:
                 logger.warning("%s has no expression: %s" % (coup.name,
                                                              coup.expr))
 
@@ -270,7 +271,7 @@ class ModelReader(loop_base_objects.LoopModel):
         self.set('coupling_dict', dict([(coup.name, coup.value) \
                                         for coup in couplings]))
         
-        return locals()
+        return all_params
     
     def get_mass(self, pdg_code):
         """easy way to have access to a mass value"""

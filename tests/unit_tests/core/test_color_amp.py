@@ -96,8 +96,8 @@ class ColorAmpTest(unittest.TestCase):
                       'color':1,
                       'mass':'zero',
                       'width':'zero',
-                      'texname':'\gamma',
-                      'antitexname':'\gamma',
+                      'texname':r'\gamma',
+                      'antitexname':r'\gamma',
                       'line':'wavy',
                       'charge':0.,
                       'pdg_code':22,
@@ -759,7 +759,7 @@ class ColorSquareTest(unittest.TestCase):
 
         self.assertEqual(color_amp.ColorMatrix.fix_summed_indices(immutable1,
                                                                immutable2),
-                         (('d', (1, -2, -5)), ('T', (-5, -2, 4))))
+                         (('d', (1, -2, -4)), ('T', (-4, -2, 4))))
 
     def test_helper_lcm_functions(self):
         """Test the helper functions to derive common denominators for

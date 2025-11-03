@@ -73,6 +73,31 @@ class FOAnalyseCard(dict):
                 raise FOAnalyseCardError('Unknown entry: %s = %s' % (key, value))
             self.keylist.append(key)
 
+    def write_card_from_template(self, card, default):
+
+        ff = open(card, 'w')
+        for line in open(default):
+            if line.startswith('#') or "=" not in line:
+                ff.write(line)
+                continue
+            print(line)
+            if '#' in line:
+                data, comment = line.split('#')
+            else:
+                data = line
+                comment = ''
+            print(data, comment)
+            args =  data.split('=')    
+            key = args[0].strip().lower()
+            value = self[key]
+            if comment:
+                print('NEW: %s = %s # %s' % (key.upper(), value, comment))
+                ff.write('%s = %s # %s' % (key.upper(), value, comment))
+            else:
+                print('NEW: %s = %s ' % (key.upper(), value))
+                ff.write('%s = %s ' % (key.upper(), value)) 
+
+
 
     def write_card(self, card_path):
         """write the parsed FO_analyse.dat (to be included in the Makefile) 
@@ -97,7 +122,7 @@ class FOAnalyseCard(dict):
                     elif value == 'root':
                         to_add = 'rbook_fe8.o rbook_be8.o HwU_dummy.o'
                     elif value == 'lhe':
-                        to_add = 'analysis_lhe.o open_output_files_dummy.o write_event.o'
+                        to_add = 'analysis_lhe.o open_output_files_dummy.o'
                     else:
                         to_add = 'analysis_dummy.o dbook.o open_output_files_dummy.o HwU_dummy.o'
                         
@@ -131,4 +156,24 @@ class FOAnalyseCard(dict):
             return ('\n'.join(lines) + '\n')
         else:
             open(card_path, 'w').write(('\n'.join(lines) + '\n'))
+
+
+
+    def update_FO_extrapaths_ajob(self, ajob_path):
+        """adds FO_EXTRAPATHS to the ajob executable
+        """
+        ajob_content = open(ajob_path).read()
+        lines = ajob_content.split('\n')
+
+        ajob_new = ''
+
+        for l in lines:
+            if l.startswith("FO_EXTRAPATHS="):
+                l = "FO_EXTRAPATHS=%s" % ":".join(self['fo_extrapaths'].split())
+            ajob_new += l + '\n'
+
+        ajob_out = open(ajob_path, 'w')
+        ajob_out.write(ajob_new)
+        ajob_out.close()
+
 

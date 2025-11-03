@@ -34,7 +34,31 @@ def load_model(name, decay=False):
     if name.endswith('/'):
         name = name[:-1]
     
+    # sanity check that model name not yet in path
+    internal_files = ['function_library', 
+                      'parameters', 
+                      'particles', 
+                      'couplings', 
+                      'lorentz', 
+                      'object_library',
+                      'vertices',
+                      'build_restrict',
+                      'function_library', 
+                      'coupling_orders',
+                      'decays',
+                      'CT_couplings',
+                      'CT_parameters',
+                      'CT_vertices',
+                      'write_param_card'] 
 
+
+    for path in internal_files:
+        if path in sys.modules:
+            old =  sys.modules[path]
+            modelname = os.path.basename(os.path.dirname(old.__file__))
+            if modelname != name:
+                del sys.modules[path]
+ 
 
     path_split = name.split(os.sep)
     if len(path_split) == 1:
@@ -65,7 +89,7 @@ def load_model(name, decay=False):
 
     # remove any link to previous model
     for name in ['particles', 'object_library', 'couplings', 'function_library', 'lorentz', 'parameters', 'vertices', 'coupling_orders', 'write_param_card',
-                 'CT_couplings', 'CT_vertices', 'CT_parameters']:
+                 'CT_couplings', 'CT_vertices', 'CT_parameters', 'running']:
         try:
             del sys.modules[name]
         except Exception:

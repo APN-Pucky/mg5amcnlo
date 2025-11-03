@@ -147,7 +147,7 @@ class ParticleTest(unittest.TestCase):
 
         for test in test_values:
             for x in test['right_list']:
-                self.assert_(temp_part.set(test['prop'], x))
+                self.assertTrue(temp_part.set(test['prop'], x))
             for x in test['wrong_list']:
                 self.assertFalse(temp_part.set(test['prop'], x), '%s not allowd for %s ' %(x, test['prop']))
 
@@ -369,25 +369,29 @@ class InteractionTest(unittest.TestCase):
 
         for test in test_values:
             for x in test['right_list']:
-                self.assert_(mytestinter.set(test['prop'], x))
+                self.assertTrue(mytestinter.set(test['prop'], x))
             for x in test['wrong_list']:
                 self.assertFalse(mytestinter.set(test['prop'], x))
 
     def test_representation(self):
         """Test interaction object string representation."""
 
-        goal = "{\n"
-        goal = goal + "    \'id\': %d,\n" % self.myinter['id']
-        goal = goal + "    \'particles\': [%s],\n" % \
-                            ','.join([str(self.mypart.get_pdg_code())]*4)
-        goal = goal + "    \'color\': [1 f(1,2,3), 1 d(1,2,3)],\n"
-        goal = goal + "    \'lorentz\': [\'L1\', \'L2\'],\n"
-        goal = goal + "    \'couplings\': %s,\n" % \
-                                    repr(self.myinter['couplings'])
-        goal = goal + "    \'orders\': %s,\n" % repr(self.myinter['orders'])
-        goal = goal + "    \'loop_particles\': [[]],\n"        
-        goal = goal + "    \'type\': \'base\',\n"
-        goal = goal + "    \'perturbation_type\': 'QCD'\n}"
+
+        goal = """{
+    'id': %(inter)d,
+    'particles': [6,6,6,6],
+    'color': [c0 = 1 f(1,2,3),c1 = 1 d(1,2,3)],
+    'lorentz': ['L1', 'L2'],
+    'couplings': {(c0, L1): g00,
+                  (c0, L2): g01,
+                  (c1, L1): g10,
+                  (c1, L2): g11}
+    'orders': {'QCD': 1, 'QED': 1},
+    'loop_particles': [[]],
+    'type': 'base',
+    'perturbation_type': 'QCD'
+}""" % {"inter": self.myinter['id']}
+
 
         self.assertEqual(goal, str(self.myinter))
 
@@ -660,8 +664,8 @@ class ModelTest(unittest.TestCase):
                   'color':0,
                   'mass':'zero',
                   'width':'zero',
-                  'texname':'\gamma',
-                  'antitexname':'\gamma',
+                  'texname':r'\gamma',
+                  'antitexname':r'\gamma',
                   'line':'wavy',
                   'charge':0.,
                   'pdg_code':22,
@@ -996,7 +1000,51 @@ class ModelTest2(unittest.TestCase):
                 self.assertEqual(param.expr, 'CMASS_mdl_MZ**2')
                 found += 1
         self.assertEqual(found, 2)
+
+#===============================================================================
+# ModelTest
+#===============================================================================
+class ModelTestRunning(unittest.TestCase):
+    """Test class for the Model object from a correct load"""
+    
+    def setUp(self):
+        """ """
+        import madgraph.interface.master_interface as Cmd
+        cmd = Cmd.MasterCmd() 
+        cmd.do_import('model %s/tests/input_files/SMEFTatNLO_running/' % madgraph.MG5DIR)
+        self.model = cmd._curr_model
         
+    def test_get_running(self):
+        """Check that a model can be converted to complex mass scheme"""
+        
+        model = copy.deepcopy(self.model)
+        out = model.get_running()
+        self.assertEqual(len(out),2)
+        if len(out[1]) == 2:
+            out = [out[1],out[0]]
+        self.assertEqual(len(out[0]),2)
+        self.assertEqual(len(out[1]),17)
+        self.assertNotIn(out[0].pop(), out[1])
+
+        # check that filtering is working
+        out = model.get_running(['cQq81', 'cQt8'])
+        self.assertEqual(len(out),1)
+        self.assertEqual(len(out[0]),17)
+        
+        # check that filtering is working
+        out = model.get_running(['aS'])
+        self.assertEqual(len(out),0)
+        
+        # check that filtering is working
+        out = model.get_running(['cQq13', 'cQq81'])
+        self.assertEqual(len(out),2)
+        if len(out[1]) == 2:
+            out = [out[1],out[0]]
+        self.assertEqual(len(out[0]),2)
+        self.assertEqual(len(out[1]),17)
+        self.assertNotIn(out[0].pop(), out[1])
+
+
 #===============================================================================
 # LegTest
 #===============================================================================
@@ -1082,7 +1130,7 @@ class LegTest(unittest.TestCase):
 
         for test in test_values:
             for x in test['right_list']:
-                self.assert_(temp_leg.set(test['prop'], x))
+                self.assertTrue(temp_leg.set(test['prop'], x))
             for x in test['wrong_list']:
                 self.assertFalse(temp_leg.set(test['prop'], x))
 
@@ -1227,7 +1275,7 @@ class MultiLegTest(unittest.TestCase):
 
         for test in test_values:
             for x in test['right_list']:
-                self.assert_(temp_multi_leg.set(test['prop'], x))
+                self.assertTrue(temp_multi_leg.set(test['prop'], x))
             for x in test['wrong_list']:
                 self.assertFalse(temp_multi_leg.set(test['prop'], x))
 
@@ -1339,7 +1387,7 @@ class VertexTest(unittest.TestCase):
 
         for test in test_values:
             for x in test['right_list']:
-                self.assert_(temp_vertex.set(test['prop'], x))
+                self.assertTrue(temp_vertex.set(test['prop'], x))
             for x in test['wrong_list']:
                 self.assertFalse(temp_vertex.set(test['prop'], x))
 
@@ -1446,7 +1494,7 @@ class DiagramTest(unittest.TestCase):
 
         for test in test_values:
             for x in test['right_list']:
-                self.assert_(temp_diagram.set(test['prop'], x))
+                self.assertTrue(temp_diagram.set(test['prop'], x))
             for x in test['wrong_list']:
                 self.assertFalse(temp_diagram.set(test['prop'], x))
 
@@ -1533,6 +1581,7 @@ class ProcessTest(unittest.TestCase):
                        'sqorders_types': {},
                        'has_born': True,
                        'overall_orders': {},
+                       'born_sq_orders': {},
                        'NLO_mode':'tree',
                        'split_orders':[]}
 
@@ -1595,7 +1644,7 @@ class ProcessTest(unittest.TestCase):
 
         for test in test_values:
             for x in test['right_list']:
-                self.assert_(temp_process.set(test['prop'], x))
+                self.assertTrue(temp_process.set(test['prop'], x))
             for x in test['wrong_list']:
                 self.assertFalse(temp_process.set(test['prop'], x))
 
@@ -1621,11 +1670,13 @@ class ProcessTest(unittest.TestCase):
         goal = goal + "    \'perturbation_couplings\': [],\n"
         goal = goal + "    \'has_born\': True,\n"
         goal = goal + "    \'NLO_mode\': 'tree',\n"
-        goal = goal + "    \'split_orders\': []\n}"
+        goal = goal + "    \'split_orders\': [],\n"
+        goal = goal + "    \'born_sq_orders\': {}\n}"
 
         for a, b in zip(goal.split('\n'), str(self.myprocess).split('\n')):
             self.assertEqual(a,b)
         self.assertEqual(goal, str(self.myprocess))
+
 
     def test_nice_string(self):
         """Test Process nice_string representation"""
@@ -1682,7 +1733,7 @@ class ProcessTest(unittest.TestCase):
         decay3.set('decay_chains', base_objects.ProcessList([decay4]))
         decay4.set('decay_chains', base_objects.ProcessList([decay5]))
         decay5.set('decay_chains', base_objects.ProcessList([decay6]))
-        self.assertTrue(len(self.myprocess.shell_string()) < 70)
+        self.assertLess(len(self.myprocess.shell_string()), 70)
         self.assertEqual(goal_str, self.myprocess.shell_string())
         
     def test_get_final_ids_after_decay(self):
@@ -1883,6 +1934,7 @@ class ProcessDefinitionTest(unittest.TestCase):
                        'is_decay_chain': False,
                        'decay_chains': base_objects.ProcessList(),
                        'squared_orders':{},
+                       'born_sq_orders':{},
                        'constrained_orders':{},
                        'has_born': True,
                        'overall_orders':{},
@@ -1937,6 +1989,32 @@ class ProcessDefinitionTest(unittest.TestCase):
                           self.my_process_definition.set,
                           'wrongparam', 0)
 
+    def test_get_process_with_legs(self):
+        """test the get_process_with_legs_function.
+        In particular, check that also the born_sq_orders are passed"""
+
+        mydict = {'id':3,
+                      'number':5,
+                      'state':True,
+                      'from_group':False,
+                      'onshell':None,                       
+                      'loop_line':False}
+
+        myleg = base_objects.Leg(mydict)
+
+        mylist = [copy.copy(myleg) for dummy in range(1, 4) ]
+        myleglist = base_objects.LegList(mylist)
+        my_new_process_definition = copy.copy(self.my_process_definition)
+        my_new_process_definition['born_sq_orders'] = {'QCD':99, 'QED':99}
+        testproc = my_new_process_definition.get_process_with_legs(myleglist)
+
+        for (k, v) in testproc.items():
+            if k not in list(self.my_process_definition.keys()): continue
+            if k != 'legs':
+                self.assertEqual(my_new_process_definition[k], testproc[k])
+            else:
+                self.assertEqual(myleglist, testproc[k])
+
     def test_values_for_prop(self):
         """Test filters for process properties"""
 
@@ -1950,7 +2028,7 @@ class ProcessDefinitionTest(unittest.TestCase):
 
         for test in test_values:
             for x in test['right_list']:
-                self.assert_(temp_process.set(test['prop'], x))
+                self.assertTrue(temp_process.set(test['prop'], x))
             for x in test['wrong_list']:
                 self.assertFalse(temp_process.set(test['prop'], x))
 
@@ -2009,7 +2087,8 @@ class ProcessDefinitionTest(unittest.TestCase):
         goal = goal + "    \'perturbation_couplings\': [],\n"
         goal = goal + "    \'has_born\': True,\n"
         goal = goal + "    \'NLO_mode\': 'tree',\n"
-        goal = goal + "    \'split_orders\': []\n}"                
+        goal = goal + "    \'split_orders\': [],\n"                
+        goal = goal + "    \'born_sq_orders\': {}\n}"                
         self.assertEqual(goal, str(self.my_process_definition))
 
 #===============================================================================

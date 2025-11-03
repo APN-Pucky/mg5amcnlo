@@ -15,7 +15,7 @@
 """A set of functions performing routine administrative I/O tasks."""
 
 from __future__ import absolute_import
-from __future__ import print_function
+import collections
 import contextlib
 import itertools
 import logging
@@ -30,7 +30,6 @@ import shutil
 import stat
 import traceback
 import gzip as ziplib
-from distutils.version import LooseVersion, StrictVersion
 import six
 from six.moves import zip_longest
 from six.moves import range
@@ -68,7 +67,7 @@ def parse_info_str(fsock):
     """
 
     info_dict = {}
-    pattern = re.compile("(?P<name>\w*)\s*=\s*(?P<value>.*)",
+    pattern = re.compile(r"(?P<name>\w*)\s*=\s*(?P<value>.*)",
                          re.IGNORECASE | re.VERBOSE)
     for entry in fsock:
         entry = entry.strip()
@@ -85,7 +84,7 @@ def parse_info_str(fsock):
 def glob(name, path=''):
     """call to glob.glob with automatic security on path"""
     import glob as glob_module
-    path = re.sub('(?P<name>\?|\*|\[|\])', '[\g<name>]', path)
+    path = re.sub(r'(?P<name>\?|\*|\[|\])', r'[\g<name>]', path)
     return glob_module.glob(pjoin(path, name))
 
 #===============================================================================
@@ -148,10 +147,14 @@ def get_pkg_info(info_str=None):
                                                   "VERSION"),
                                                   parse_info_str, 
                                                   print_error=False)
-        PACKAGE_INFO = info_dict
-        
-    return info_dict
-
+        if info_dict:                                          
+           PACKAGE_INFO = info_dict
+        else:
+           info_dict ={}
+           info_dict['version'] = '3.x.x'
+           info_dict['date'] = '20xx-xx-xx'
+           PACKAGE_INFO = info_dict        
+        return PACKAGE_INFO
 #===============================================================================
 # get_time_info
 #===============================================================================
@@ -172,6 +175,42 @@ def get_time_info():
 def is_MA5_compatible_with_this_MG5(ma5path):
     """ Returns None if compatible or, it not compatible, a string explaining 
     why it is so."""
+
+    class version:
+        def __init__(input):
+            self.info = input.split('.')
+
+        def __lt__(input):
+            if isinstance(input, str):
+                input = version(input)
+            
+            for a,b in zip(self.info, input.info):
+                both_int = True
+                try:
+                    a = int(a)
+                except Exception:
+                     both_int = False
+                try:
+                    b = int(b)
+                except Exception:
+                    both_int = False
+                if both_int:
+                    if a !=b:
+                        return a<b
+                    continue
+                elif isinstance(a, int):
+                    return False
+                elif isinstance(a, False):
+                    return False
+                elif a == b:
+                    continue
+                else:
+                    return a < b
+            else:
+                return len(self.info) < len(input.info)                   
+
+    def LooseVersion(input):
+        return version(input)
 
     ma5_version = None
     try:
@@ -282,16 +321,11 @@ def has_f2py():
     has_f2py = False
     if which('f2py'):
         has_f2py = True
-    elif sys.version_info[1] == 6:
-        if which('f2py-2.6'):
-            has_f2py = True
-        elif which('f2py2.6'):
-            has_f2py = True                 
-    else:
-        if which('f2py-2.7'):
-            has_f2py = True 
-        elif which('f2py2.7'):
-            has_f2py = True  
+    elif which('f2py%d.%d' %(sys.version_info.major, sys.version_info.minor)):
+        has_f2py = True
+    elif which('f2py%d' %(sys.version_info.major)):
+        has_f2py = True
+
     return has_f2py       
         
 #===============================================================================
@@ -348,7 +382,7 @@ def activate_dependence(dependency, cmd=None, log = None, MG5dir=None):
     if dependency=='ninja':
         if cmd.options['ninja'] in ['None',None,''] or\
          (cmd.options['ninja'] == './HEPTools/lib' and not MG5dir is None and\
-         which_lib(pjoin(MG5dir,cmd.options['ninja'],'libninja.a')) is None):
+         which_lib(pjoin(MG5dir,cmd.options['ninja'],'lib','libninja.a')) is None):
             tell("Installing ninja...")
             cmd.do_install('ninja')
  
@@ -414,12 +448,14 @@ def multiple_try(nb_try=5, sleep=20):
 
     def deco_retry(f):
         def deco_f_retry(*args, **opt):
+            my_error = None
             for i in range(nb_try):
                 try:
                     return f(*args, **opt)
                 except KeyboardInterrupt:
                     raise
                 except Exception as error:
+                    my_error = error
                     global wait_once
                     if not wait_once:
                         text = """Start waiting for update. (more info in debug mode)"""
@@ -433,7 +469,7 @@ def multiple_try(nb_try=5, sleep=20):
 
             if __debug__:
                 raise
-            raise error.__class__('[Fail %i times] \n %s ' % (i+1, error))
+            raise my_error.__class__('[Fail %i times] \n %s ' % (i+1, my_error))
         return deco_f_retry
     return deco_retry
 
@@ -468,7 +504,7 @@ def copytree(*args, **opts):
 
     if 'copy_function' not in opts:
         opts['copy_function'] = shutil.copy
-    return misc.copytree(*args, **opts)
+    return shutil.copytree(*args, **opts)
 
 #===============================================================================
 # Compiler which returns smart output error in case of trouble
@@ -578,10 +614,10 @@ def mod_compilator(directory, new='gfortran', current=None, compiler_type='gfort
     #search file
     file_to_change=find_makefile_in_dir(directory)
     if compiler_type == 'gfortran':
-        comp_re = re.compile('^(\s*)FC\s*=\s*(.+)\s*$')
+        comp_re = re.compile(r'^(\s*)FC\s*=\s*(.+)\s*$')
         var = 'FC'
     elif compiler_type == 'cpp':
-        comp_re = re.compile('^(\s*)CXX\s*=\s*(.+)\s*$')
+        comp_re = re.compile(r'^(\s*)CXX\s*=\s*(.+)\s*$')
         var = 'CXX'
     else:
         MadGraph5Error, 'Unknown compiler type: %s' % compiler_type
@@ -792,6 +828,7 @@ def detect_if_cpp_compiler_is_clang(cpp_compiler):
         return False
 
     output = output.decode(errors='ignore')
+    
     return 'LLVM' in str(output) or "clang" in str(output)
 
 
@@ -824,9 +861,9 @@ def detect_current_compiler(path, compiler_type='fortran'):
 #    comp = re.compile("^\s*FC\s*=\s*(\w+)\s*")
 #   The regular expression below allows for compiler definition with absolute path
     if compiler_type == 'fortran':
-        comp = re.compile("^\s*FC\s*=\s*([\w\/\\.\-]+)\s*")
+        comp = re.compile("^\\s*FC\\s*=\\s*([\\w\\/\\.\\-]+)\\s*")
     elif compiler_type == 'cpp':
-        comp = re.compile("^\s*CXX\s*=\s*([\w\/\\.\-]+)\s*")
+        comp = re.compile("^\\s*CXX\\s*=\\s*([\\w\\/\\.\\-]+)\\s*")
     else:
         MadGraph5Error, 'Unknown compiler type: %s' % compiler_type
 
@@ -866,8 +903,8 @@ def rm_old_compile_file():
     
     # remove related libraries
     libraries = ['libblocks.a', 'libgeneric_mw.a', 'libMWPS.a', 'libtools.a', 'libdhelas3.a',
-                 'libdsample.a', 'libgeneric.a', 'libmodel.a', 'libpdf.a', 'libdhelas3.so', 'libTF.a', 
-                 'libdsample.so', 'libgeneric.so', 'libmodel.so', 'libpdf.so']
+                 'libdsample.a', 'libgeneric.a', 'libmodel.a', 'libpdf.a', 'libgammaUPC.a','libdhelas3.so', 'libTF.a', 
+                 'libdsample.so', 'libgeneric.so', 'libmodel.so', 'libpdf.so', 'libgammaUPC.so']
     lib_pos='./lib'
     [os.remove(os.path.join(lib_pos, lib)) for lib in libraries \
                                  if os.path.exists(os.path.join(lib_pos, lib))]
@@ -964,7 +1001,19 @@ def call_stdout(arg, *args, **opt):
 def copytree(src, dst, symlinks = False, ignore = None):
   if not os.path.exists(dst):
     os.makedirs(dst)
-    shutil.copystat(src, dst)
+    try:
+      shutil.copystat(src, dst)
+    except PermissionError:
+        if os.path.realpath(src).startswith('/cvmfs') and os.path.realpath(dst).startswith('/afs'):
+           # allowing missmatch from cvmfs to afs since sounds to not create issue --at least in general-- 
+           logger.critical(f'Ignoring that we could not copy permissions from {src} to {dst}')
+        else:
+           logger.critical(f'Permission error detected from {src} to {dst}.\n'+\
+                          'If you are using WSL with windows partition, please try using python3.12\n'+\
+                          'or avoid moving your data from the WSL partition to the UNIX one')
+           # we do not have enough experience in WSL to allow it to get trough.
+           raise
+      
   lst = os.listdir(src)
   if ignore:
     excl = ignore(src, lst)
@@ -1233,7 +1282,8 @@ def gzip(path, stdout=None, error=True, forceexternal=False):
         stdout = "%s.gz" % stdout
 
     try:
-        ziplib.open(stdout,"w").write(open(path).read().encode())
+        with ziplib.open(stdout, 'wb') as f:
+            f.write(open(path).read().encode())
     except OverflowError:
         gzip(path, stdout, error=error, forceexternal=True)
     except Exception:
@@ -1750,25 +1800,31 @@ class ProcessTimer:
 #    except psutil.error.NoSuchProcess:
 #      pass
 
-## Define apple_notify (in a way which is system independent
-class Applenotification(object):
+## Define system_notify (in a way which is system independent
+class Notification(object):
 
     def __init__(self):
         self.init = False
         self.working = True
 
-    def load_notification(self):        
-        try:
-            import Foundation
-            import objc
-            self.NSUserNotification = objc.lookUpClass('NSUserNotification')
-            self.NSUserNotificationCenter = objc.lookUpClass('NSUserNotificationCenter')
-        except:
-            self.working=False
-            if which('osascript'):
-                self.working = 'osascript'
-            return
-        self.working=True
+    def load_notification(self):
+        self.init = True
+        self.working = False
+        if sys.platform == 'darwin':
+            try:
+                import Foundation
+                import objc
+                self.NSUserNotification = objc.lookUpClass('NSUserNotification')
+                self.NSUserNotificationCenter = objc.lookUpClass('NSUserNotificationCenter')
+                self.working = "Foundation"
+            except:
+                if which('osascript'):
+                    self.working = 'osascript'
+                return
+        elif sys.platform == 'linux':
+            if which('notify-send'):
+                self.working = 'notify-send'
+            
 
     def __call__(self,subtitle, info_text, userInfo={}):
         
@@ -1776,7 +1832,7 @@ class Applenotification(object):
             self.load_notification()
         if not self.working:
             return
-        elif self.working is True:
+        elif self.working == "Foundation":
             try:
                 notification = self.NSUserNotification.alloc().init()
                 notification.setTitle_('MadGraph5_aMC@NLO')
@@ -1789,7 +1845,7 @@ class Applenotification(object):
                 self.NSUserNotificationCenter.defaultUserNotificationCenter().scheduleNotification_(notification)
             except:
                 pass
-
+            
         elif self.working=='osascript':
             try:
                 os.system("""
@@ -1797,10 +1853,16 @@ class Applenotification(object):
               """.format(info_text, subtitle))
             except:
                 pass
-        
+
+        elif self.working == 'notify-send':
+            try:
+                os.system(""" notify-send "MadGraph5_aMC@NLO" "{}"  &> /dev/null """.format(info_text,subtitle))
+            except:
+                pass
 
 
-apple_notify = Applenotification()
+
+system_notify = Notification()
 
 class EasterEgg(object):
     
@@ -1831,7 +1893,7 @@ class EasterEgg(object):
         "%s" + \
         "*                                                          *\n" + \
         "*    The MadGraph5_aMC@NLO Development Team - Find us at   *\n" + \
-        "*    https://server06.fynu.ucl.ac.be/projects/madgraph     *\n" + \
+        "*              http://madgraph.phys.ucl.ac.be/             *\n" + \
         "*                            and                           *\n" + \
         "*            http://amcatnlo.web.cern.ch/amcatnlo/         *\n" + \
         "*                                                          *\n" + \
@@ -1845,16 +1907,37 @@ class EasterEgg(object):
     May4_banner = "*                           _____                          *\n" + \
         "*                       ,-~\"     \"~-.                      *\n" + \
         "*        *            ,^ ___         ^.             *      *\n" + \
-        "*          *         / .^   ^.         \         *         *\n" + \
+        "*          *         / .^   ^.         \\         *         *\n" + \
         "*            *      Y  l  o  !          Y      *           *\n" + \
         "*              *   l_  `.___.'         _,[   *             *\n" + \
         "*                * |^~\"--------------~\"\"^| *               *\n" + \
         "*              *   !     May the 4th     !   *             *\n" + \
-        "*            *       \                 /       *           *\n" + \
+        "*            *       \\                 /       *           *\n" + \
         "*          *          ^.             .^          *         *\n" + \
         "*        *              \"-.._____.,-\"              *       *\n"
 
-    special_banner = {(4,5): May4_banner}
+    Zcommezorglub =  "* M:::::::::M         M:::::::::M                          *\n" + \
+        "* M:::::::::M         M:::::::::M                          *\n" + \
+        "* M::::::::::M       M::::::::::M                          *\n" + \
+        "* M:::::::::::M     M:::::::::::M   (_)___                 *\n" + \
+        "* M:::::::M::::M   M::::M:::::::M   | / __|                *\n" + \
+        "* M::::::M M::::M M::::M M::::::M   | \\__ \\                *\n" + \
+        "* M::::::M  M::::M::::M  M::::::M   |_|___/                *\n" + \
+        "* M::::::M   M:::::::M   M::::::M                          *\n" + \
+        "* M::::::M    M:::::M    M::::::M    / _| ___  _ __        *\n" + \
+        "* M::::::M     MMMMM     M::::::M   | |_ / _ \\| '__|       *\n" + \
+        "* M::::::M               M::::::M   |  _| (_) | |          *\n" + \
+        "* M::::::M               M::::::M   |_/\\/\\___/|_|          *\n" + \
+        "* M::::::M               M::::::M                          *\n" + \
+        "* MMMMMMMM               MMMMMMMM                          *\n" + \
+        "*                                                          *\n" + \
+        "*     https://en.wikipedia.org/wiki/Z_comme_Zorglub        *\n"    
+
+
+
+
+
+    special_banner = {(4,5): May4_banner, (14,10): Zcommezorglub}
 
     
     def __init__(self, msgtype):
@@ -1906,7 +1989,26 @@ class EasterEgg(object):
         if MADEVENT:
             return
         import madgraph.interface.madgraph_interface as madgraph_interface
-        madgraph_interface.CmdExtended.intro_banner= self.default_banner_1 + self.special_banner[date] + self.default_banner_2
+        if date == (14,10):
+            def flip(text):
+                new_text = []
+                for line in text.split('\n'):
+                    new_line = []
+                    for word in line.split(' '):
+                        if "%" in word:
+                            new_line.append(word)
+                            continue
+                        new_line.append(''.join(list(reversed(list(word)))))
+                    new_text.append(' '.join(new_line))
+                return '\n'.join(new_text)
+
+            madgraph_interface.CmdExtended.intro_banner= flip(self.default_banner_1) + \
+                                                        self.special_banner[date] + \
+                                                        flip(self.default_banner_2) #+ \
+                                                        #"\n* homage to Franquin (text above in zorgland)              *" +\
+                                                        #"\n************************************************************"
+        else:
+            madgraph_interface.CmdExtended.intro_banner= self.default_banner_1 + self.special_banner[date] + self.default_banner_2
         
 
     def call_apple(self, msg):
@@ -1925,7 +2027,7 @@ class EasterEgg(object):
         
         if muted:
             if not EasterEgg.done_notification:
-                apple_notify('On April first','turn up your volume!')
+                system_notify('On April first','turn up your volume!')
                 EasterEgg.done_notification = True
         else:
             os.system('say %s' % msg)
@@ -1952,20 +2054,22 @@ class EasterEgg(object):
 
 
 def get_older_version(v1, v2):
-    """ return v2  if v1>v2
+    """ return v2 if v1>v2
         return v1 if v1<v2
         return v1 if v1=v2 
-        return v1 if v2 is not in 1.2.3.4.5 format
-        return v2 if v1 is not in 1.2.3.4.5 format
+        return v1 if v2 is not in 1.2.3.4.5 format (treat '<n>_text' as '<n>' if n is an integer)
+        return v2 if v1 is not in 1.2.3.4.5 format (treat '<n>_text' as '<n>' if n is an integer)
     """
     
     for a1, a2 in zip_longest(v1, v2, fillvalue=0):
+        if '_' in str(a1) : a1 = str(a1)[:str(a1).index('_')]
+        if '_' in str(a2) : a2 = str(a2)[:str(a2).index('_')]
         try:
-            a1= int(a1)
+            a1 = int(a1)
         except:
             return v2
         try:
-            a2= int(a2)
+            a2 = int(a2)
         except:
             return v1        
         if a1 > a2:
@@ -1999,13 +2103,14 @@ def is_plugin_supported(obj):
         plugin_support[name] = False
         return
     
+    logger.debug("Validating plugin against this version: %s." % '.'.join(str(i) for i in mg5_ver) )
     if get_older_version(min_ver, mg5_ver) == min_ver and \
        get_older_version(mg5_ver, max_ver) == mg5_ver:
         plugin_support[name] = True
         if get_older_version(mg5_ver, val_ver) == val_ver:
-            logger.warning("""Plugin %s has marked as NOT being validated with this version. 
+            logger.warning("""Plugin %s has marked as NOT being validated with this version: %s. 
 It has been validated for the last time with version: %s""",
-                                        name, '.'.join(str(i) for i in val_ver))
+			   name, '.'.join(str(i) for i in mg5_ver), '.'.join(str(i) for i in val_ver) )
     else:
         if __debug__:
             logger.error("Plugin %s seems not supported by this version of MG5aMC. Keep it active (please update status)" % name)
@@ -2135,38 +2240,56 @@ def import_python_lhapdf(lhapdfconfig):
         use_lhapdf=False
         return False
     else:
+        if sys.platform != "darwin":
+            if not 'LD_LIBRARY_PATH' in os.environ:
+                os.environ['LD_LIBRARY_PATH'] = lhapdf_libdir
+            else:
+                os.environ['LD_LIBRARY_PATH'] = '%s:%s' %(lhapdf_libdir,os.environ['LD_LIBRARY_PATH'])
         try:
             candidates=[dirname for dirname in os.listdir(lhapdf_libdir) \
                             if os.path.isdir(os.path.join(lhapdf_libdir,dirname))]
         except OSError:
             candidates=[]
+        if os.path.isdir(pjoin(lhapdf_libdir, os.pardir, 'local', 'lib')):
+            candidates += [pjoin(os.pardir,'local', 'lib', dirname) for dirname in os.listdir(pjoin(lhapdf_libdir, os.pardir, 'local', 'lib'))
+                           if os.path.isdir(os.path.join(lhapdf_libdir,os.pardir, 'local', 'lib', dirname))]
         for candidate in candidates:
-            if os.path.isdir(os.path.join(lhapdf_libdir,candidate,'site-packages')):
-                sys.path.insert(0,os.path.join(lhapdf_libdir,candidate,'site-packages'))
-                try:
-                    import lhapdf
-                    use_lhapdf=True
-                    break
-                except ImportError:
-                    sys.path.pop(0)
-                    continue
+            for subdir in ['site-packages', 'dist-packages']:
+                if os.path.isdir(os.path.join(lhapdf_libdir,candidate, subdir)):
+                    sys.path.insert(0,os.path.join(lhapdf_libdir,candidate, subdir))
+                    try:
+                        import lhapdf
+                        use_lhapdf=True
+                        break
+                    except ImportError as  error:
+                        sys.path.pop(0)
+                        continue
+            else:
+                continue
+            break
     if not use_lhapdf:
         try:
             candidates=[dirname for dirname in os.listdir(lhapdf_libdir+'64') \
                             if os.path.isdir(os.path.join(lhapdf_libdir+'64',dirname))]
         except OSError:
             candidates=[]
-
+        if os.path.isdir(pjoin(lhapdf_libdir, os.pardir, 'local', 'lib64')):
+            candidates += [pjoin(os.pardir,'local', 'lib64', dirname) for dirname in os.listdir(pjoin(lhapdf_libdir, os.pardir, 'local', 'lib'))
+                           if os.path.isdir(os.path.join(lhapdf_libdir,os.pardir, 'local', 'lib64', dirname))]
         for candidate in candidates:
-            if os.path.isdir(os.path.join(lhapdf_libdir+'64',candidate,'site-packages')):
-                sys.path.insert(0,os.path.join(lhapdf_libdir+'64',candidate,'site-packages'))
-                try:
-                    import lhapdf
-                    use_lhapdf=True
-                    break
-                except ImportError:
-                    sys.path.pop(0)
-                    continue
+            for subdir in ['site-packages', 'dist-packages']:
+                if os.path.isdir(os.path.join(lhapdf_libdir+'64',candidate, subdir)):
+                    sys.path.insert(0,os.path.join(lhapdf_libdir+'64',candidate, subdir))
+                    try:
+                        import lhapdf
+                        use_lhapdf=True
+                        break
+                    except ImportError as error:
+                        sys.path.pop(0)
+                        continue
+            else:
+                continue
+            break
         if not use_lhapdf:
             try:
                 import lhapdf
@@ -2182,7 +2305,10 @@ def import_python_lhapdf(lhapdfconfig):
         
     if use_lhapdf:
         python_lhapdf = lhapdf
-        python_lhapdf.setVerbosity(0)
+        try:
+            python_lhapdf.setVerbosity(0)
+        except Exception:
+            pass
     else:
         python_lhapdf = None
     return python_lhapdf
@@ -2206,6 +2332,92 @@ def wget(http, path, *args, **opt):
         return call(['curl', '-L', http, '-o%s' % path], *args, **opt)
     else:
         return call(['wget', http, '--output-document=%s'% path], *args, **opt)
+
+
+def make_unique(input, keepordering=None):
+    "remove duplicate in a list "
+
+    if keepordering is None:
+        if MADEVENT:
+            keepordering = False
+        else:
+            keepordering = madgraph.ordering
+
+    if not keepordering:
+        return list(set(input))
+    else:
+        return list(dict.fromkeys(input)) 
+
+if six.PY3:
+    try:
+        from collections import MutableSet
+    except ImportError: # this is for python3.10
+        from collections.abc import  MutableSet
+    
+    class OrderedSet(collections.OrderedDict, MutableSet):
+
+        def __init__(self, arg=None):
+            super( OrderedSet, self).__init__()
+            if arg:
+                self.update(arg)
+
+        def update(self, *args, **kwargs):
+            if kwargs:
+                raise TypeError("update() takes no keyword arguments")
+
+            for s in args:
+                for e in s:
+                    self.add(e)
+
+        def add(self, elem):
+            self[elem] = None
+
+        def discard(self, elem):
+            self.pop(elem, None)
+
+        def pop(self, *args):
+            if args:
+                return super().pop(*args)
+            else:
+                key = next(iter(self))
+                del self[key]
+                return key
+
+        def __le__(self, other):
+            return all(e in other for e in self)
+
+        def __lt__(self, other):
+            return self <= other and self != other
+
+        def __ge__(self, other):
+            return all(e in self for e in other)
+
+        def __gt__(self, other):
+            return self >= other and self != other
+
+        def __repr__(self):
+            return 'OrderedSet([%s])' % (', '.join(map(repr, self.keys())))
+
+        def __str__(self):
+            return '{%s}' % (', '.join(map(repr, self.keys())))
+
+        def __eq__(self, other):
+            try:
+                return set(self) == set(other)
+            except TypeError:
+                return False
+        difference = property(lambda self: self.__sub__)
+        difference_update = property(lambda self: self.__isub__)
+        intersection = property(lambda self: self.__and__)
+        intersection_update = property(lambda self: self.__iand__)
+        issubset = property(lambda self: self.__le__)
+        issuperset = property(lambda self: self.__ge__)
+        symmetric_difference = property(lambda self: self.__xor__)
+        symmetric_difference_update = property(lambda self: self.__ixor__)
+        union = property(lambda self: self.__or__)
+else:
+    OrderedSet = set
+
 
 def cmp_to_key(mycmp):
     'Convert a cmp= function into a key= function (for using python2 type of sort)'

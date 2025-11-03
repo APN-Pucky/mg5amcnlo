@@ -12,7 +12,8 @@ c Works with td and HwU for the moment
       INTEGER NUP,IDPRUP,IDUP(MAXNUP),ISTUP(MAXNUP),
      # MOTHUP(2,MAXNUP),ICOLUP(2,MAXNUP)
       DOUBLE PRECISION XWGTUP,SCALUP,AQEDUP,AQCDUP,
-     # PUP(5,MAXNUP),VTIMUP(MAXNUP),SPINUP(MAXNUP)
+     # PUP(5,MAXNUP),VTIMUP(MAXNUP),SPINUP(MAXNUP),
+     # SCALUP_a(MAXNUP,MAXNUP)
       double precision sum_wgt,www(1000)
       integer isorh_lhe,ifks_lhe,jfks_lhe,fksfather_lhe,ipartner_lhe
       double precision scale1_lhe,scale2_lhe
@@ -23,7 +24,7 @@ c Works with td and HwU for the moment
       integer ione
       parameter (ione=1)
       character*80 event_file
-      character*140 buff
+      character*1000 buff
       character*9 ch1
       logical AddInfoLHE,do_rwgt_scale_loc,do_rwgt_pdf_loc
       logical usexinteg,mint
@@ -76,7 +77,8 @@ c Works with td and HwU for the moment
       do i=1,maxevt
          call read_lhef_event(ifile,
      &        NUP,IDPRUP,XWGTUP,SCALUP,AQEDUP,AQCDUP,
-     &        IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,buff)
+     &        IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,
+     &        buff,SCALUP_a)
 c topout() in madfks_plot.f knows nothing about the overall event
 c normalisation. Compensate here according to the setting of
 c event_norm (read from the event file)

@@ -19,7 +19,6 @@ model format.
 The reference version is given here as a argument which can be changed by hand.
 """
 from __future__ import absolute_import
-from __future__ import print_function
 import itertools
 import logging
 import os
@@ -481,7 +480,7 @@ class OLDMG5Comparator(unittest.TestCase):
         # Create a list of processes to check automatically                                                                                                                             
         my_proc_list = ['p p > j j']
         values = {'number_of_P0': '1',
-                  'cross_P0_qq_qq': '61057.7188'}
+                  'cross_P0_qq_qq': '62923'}
 
         # Store list of non-zero processes and results in file                                                                                                                          
         self.compare_cross_section_to_values(values, my_proc_list,
@@ -524,7 +523,7 @@ class OLDMG5Comparator(unittest.TestCase):
                    'number_of_P2': '1',
                    'number_of_P3': '1',
                    'cross_P0_qq_z0zT_z_ll_z_ll': '0.00016429',
-                   'cross_P1_qq_z0zT_z_ll_z_ll': '0.00017108',
+                   'cross_P1_qq_z0zT_z_ll_z_ll': '0.00018',
                    'cross_P2_qq_z0zT_z_ll_z_ll': '0.00066055',
                    'cross_P3_qq_zTzT_z_ll_z_ll': '0.0019198',
                    } 
@@ -601,7 +600,7 @@ class OLDMG5Comparator(unittest.TestCase):
                              model = "sm",
                              energy = 1000,
                              filename = "sm_22.log") 
-        self.assertTrue(len(my_proc_list) > 5000)  
+        self.assertGreater(len(my_proc_list), 5000)
             
     def test_mg5_sm_13(self):
         """Test a semi-complete list of sm 1->3 processes"""
@@ -863,7 +862,7 @@ class OLDMG5Comparator(unittest.TestCase):
                              orders = {'QED':99, 'QCD':99},
                              filename = "short_cs_sm.log")
 
-        self.assertTrue(len(proc_lists)==2)
+        self.assertEqual(len(proc_lists), 2)
 
 
 

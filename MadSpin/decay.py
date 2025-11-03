@@ -2,7 +2,6 @@
 
 from __future__ import division
 from __future__ import absolute_import
-from __future__ import print_function
 from madgraph.interface import reweight_interface
 from six.moves import map
 from six.moves import range
@@ -178,7 +177,7 @@ class Event:
             part=self.event2mg[item]
             if part>0:
                 particle_line=self.get_particle_line(self.particle[part])
-                if abs(self.particle[part]["istup"]) == 1:
+                if abs(self.particle[part]["istup"]) == 1 or abs(self.particle[part]["istup"]) == 2:
                     if "pt_scale" in self.particle[part]:
                         scales.append(self.particle[part]["pt_scale"])
                     else:
@@ -187,17 +186,16 @@ class Event:
                 particle_line=self.get_particle_line(self.resonance[part])
             line+=particle_line        
         
-        if any(scales):
-            sqrts = self.particle[1]["pt_scale"]
-            line += "<scales %s></scales>\n" % ' '.join(['pt_clust_%i=\"%s\"' 
-                                                        %(i-1,s if s else sqrts)
-                                                       for i,s in enumerate(scales)
-                                                       if i>1])
-        
         if self.diese:
             line += self.diese
         if self.rwgt:
             line += self.rwgt
+        if any(scales):
+            sqrts = self.particle[1]["pt_scale"]
+            line += "<scales %s></scales>\n" % ' '.join(['pt_clust_%i=\"%s\"'
+                                                        %(i+1,s if s else self.scale)
+                                                       for i,s in enumerate(scales)
+                                                       if i>1])
         line+="</event> \n"
         return line
 
@@ -1043,16 +1041,18 @@ class AllMatrixElement(dict):
         
         decay_struct = {}
         to_decay = collections.defaultdict(list)
-        
+        orig_decay = collections.defaultdict(list)
         for i, proc in enumerate(me.get('decay_chains')):
             pid =  proc.get('legs')[0].get('id')
             to_decay[pid].append((i,proc))
-                  
-                
+            orig_decay[pid].append((i,proc))
+
         for leg in me.get('legs'):
+            if not leg.get('state'): # initial state particle does not decay ...
+                continue
             pid =  leg.get('id')
             nb = leg.get('number')
-            if pid in to_decay:
+            if pid in to_decay and leg.get('state'):
                 i, proc = to_decay[pid].pop()
                 decay_struct[nb] = dc_branch_from_me(proc)
                 identical = [me.get('decay_chains')[i] for me in me_list[1:]]
@@ -1605,12 +1605,16 @@ class width_estimate(object):
         # since compute_width cannot be used for particle with pid<0
         
         particle_set = set()
-        for part in resonances:
+        for i, part in enumerate(resonances[:]):
             if part in mgcmd._multiparticles:
                 for pid in mgcmd._multiparticles[part]:
                     particle_set.add(abs(pid))
                 continue
-            pid_part = abs(label2pid[part]) 
+            try:
+                pid_part = abs(label2pid[part])
+            except KeyError:
+                pid_part = abs(label2pid[part.lower()]) 
+                resonances[i] = part.lower()
             particle_set.add(abs(pid_part))  
 
         particle_set = list(particle_set)
@@ -2145,12 +2149,13 @@ class decay_all_events(object):
             self.outputfile = open(self.outputfile.name, 'w')
             self.write_banner_information(efficiency)
             pos = self.outputfile.tell()
-            old = open('%s_tmp' % self.outputfile.name)
-            line=''
-            while '</init>' not in line:
-                line = old.readline()
-            
-            self.outputfile.write(old.read())
+            header = True
+            for line in open('%s_tmp' % self.outputfile.name):
+                if header:
+                    if '</init>' in line:
+                        header = False
+                    continue
+                self.outputfile.write(line)
             files.rm('%s_tmp' % self.outputfile.name)
             
         # Closing all run
@@ -2558,6 +2563,12 @@ class decay_all_events(object):
                 part_for_curr_evt=event_map[part-1]+1 # index for curr event
                 pid=self.curr_event.particle[part_for_curr_evt]['pid']
                 self.curr_event.particle[part_for_curr_evt]['helicity']=helicities[part-1]
+        for index in self.curr_event.resonance:
+            #part=self.curr_event.event2mg[index]       # index for production ME
+            #part_for_curr_evt=event_map[part-1]+1 # index for curr event
+            self.curr_event.resonance[index]['helicity']=9 
+            #part['helicity'] = 9    
+
 
     def get_mom(self,momenta):
         """ input: list of momenta in a string format 
@@ -2764,7 +2775,7 @@ class decay_all_events(object):
         processes = [line[9:].strip() for line in self.banner.proc_card
                      if line.startswith('generate')]
         processes += [' '.join(line.split()[2:]) for line in self.banner.proc_card
-                      if re.search('^\s*add\s+process', line)]
+                      if re.search(r'^\s*add\s+process', line)]
         
         mgcmd = self.mgcmd
         modelpath = self.model.get('modelpath+restriction')
@@ -2833,23 +2844,42 @@ class decay_all_events(object):
             logger.info('generating the full matrix element squared (with decay)')
             start = time.time()
             to_decay = list(self.mscmd.list_branches.keys())
-            decay_text = []
+            decay_text_correlated = {'':[]}
             for decays in self.mscmd.list_branches.values():
                 for decay in  decays:
+                    correlated = ''
+                    if '@' in decay:
+                        decay, correlated = decay.split('@')
+                        correlated = correlated.strip()
+                        if correlated not in decay_text_correlated:
+                            decay_text_correlated[correlated] = []
+                    curr = decay_text_correlated[correlated]
                     if '=' not in decay:
                         decay += ' QCD=99'
                     if ',' in decay:
-                        decay_text.append('(%s)' % decay)
+                        curr.append('(%s)' % decay)
                     else:
-                        decay_text.append(decay)
-            decay_text = ', '.join(decay_text)
+                        curr.append(decay)
+            decay_text = ', '.join(decay_text_correlated[''])
+            del decay_text_correlated['']
             commandline = ''
-            for proc in processes:
-                if not proc.strip().startswith(('add','generate')):
-                    proc = 'add process %s' % proc
-                commandline += self.get_proc_with_decay(proc, decay_text, mgcmd._curr_model, self.options)
-                
-            commandline = commandline.replace('add process', 'generate',1)
+            if not decay_text_correlated:
+                for proc in processes:
+                    if not proc.strip().startswith(('add','generate')):
+                        proc = 'add process %s' % proc
+                    commandline += self.get_proc_with_decay(proc, decay_text, mgcmd._curr_model, self.options)
+                commandline = commandline.replace('add process', 'generate',1)
+            else:
+                for key in decay_text_correlated:
+                    for proc in processes:
+                        if not proc.strip().startswith(('add','generate')):
+                            proc = 'add process %s' % proc
+                        if decay_text:
+                            one_decay = decay_text + ',' + ', '.join(decay_text_correlated[key])
+                        else:
+                            one_decay = ', '.join(decay_text_correlated[key])
+                        commandline += self.get_proc_with_decay(proc, one_decay, mgcmd._curr_model, self.options)
+                commandline = commandline.replace('add process', 'generate',1)
             logger.info(commandline)
             mgcmd.exec_cmd(commandline, precmd=True)
             # remove decay with 0 branching ratio.
@@ -2902,6 +2932,8 @@ class decay_all_events(object):
         i=0
         for processes in self.list_branches.values():
             for proc in processes:
+                if "@" in proc:
+                    proc = proc.split("@",1)[0]
                 commandline+="add process %s @%i --no_warning=duplicate;" % (proc,i)
                 i+=1        
         commandline = commandline.replace('add process', 'generate',1)
@@ -3143,9 +3175,13 @@ class decay_all_events(object):
         need_param_card_modif = False
         
         # now extract the width of the resonances:
-        for particle_label in resonances:
+        for i,particle_label in enumerate(copy.copy(resonances)):
             try:
-                part=abs(self.pid2label[particle_label])
+                try:
+                    part=abs(self.pid2label[particle_label])
+                except KeyError as error:
+                    part=abs(self.pid2label[particle_label.lower()])
+                    resonances[i] = particle_label.lower()
                 #mass = self.banner.get('param_card','mass', abs(part))
                 width = self.banner.get('param_card','decay', abs(part))
             except ValueError as error:
@@ -3721,7 +3757,6 @@ class decay_all_events(object):
                 else:
                     # now we need to write the decay products in the event
                     # follow the decay chain order, so that we can easily keep track of the mother index
-                       
                     map_to_part_number={}
                     for res in range(-1,-len(list(decay_struct[part]["tree"].keys()))-1,-1):
                         index_res_for_mom=decay_struct[part]['mg_tree'][-res-1][0]
@@ -3737,7 +3772,7 @@ class decay_all_events(object):
                             decay_struct[part]["tree"][res]["colup1"]=colup1
                             decay_struct[part]["tree"][res]["colup2"]=colup2
                             mass=mom.m
-                            helicity=0.
+                            helicity=9.
                             decayed_event.particle[part_number]={"pid":pid,\
                                 "istup":istup,"mothup1":mothup1,"mothup2":mothup2,\
                                 "colup1":colup1,"colup2":colup2,"momentum":mom,\
@@ -4192,7 +4227,7 @@ class decay_all_events_onshell(decay_all_events):
         processes = [line[9:].strip() for line in self.banner.proc_card
                      if line.startswith('generate')]
         processes += [' '.join(line.split()[2:]) for line in self.banner.proc_card
-                      if re.search('^\s*add\s+process', line)]
+                      if re.search(r'^\s*add\s+process', line)]
         
         mgcmd = self.mgcmd
         modelpath = self.model.get('modelpath+restriction')

@@ -27,6 +27,7 @@ C----------------------------------------------------------------------
       SUBROUTINE PYABEG(nnn,wwwi)
 C     USER''S ROUTINE FOR INITIALIZATION
 C----------------------------------------------------------------------
+      use HwU_wgts_info_len
       INCLUDE 'HEPMC.INC'
       include 'reweight0.inc'
       real * 8 bin,xmi,xms,pi
@@ -47,7 +48,7 @@ c
       data cc/'     ','Born '/
       integer nwgt_analysis
       common/c_analysis/nwgt_analysis
-      character*50 weights_info(max_weight_shower)
+      character*(wgts_info_len) weights_info(max_weight_shower)
      $     ,wwwi(max_weight_shower)
 c
       do i=1,nnn
@@ -69,7 +70,8 @@ c for the uncertainty estimate
         call HwU_book(l+5,'trans. mass  '//HwUtype(i),100,0d0,200d0)
         call HwU_book(l+6,'w rapidity   '//HwUtype(i),40,-9d0,9d0)
         call HwU_book(l+7,'w pt         '//HwUtype(i),100,0d0,200d0)
-        call HwU_book(l+8,'cphi[l,vl]   '//HwUtype(i),40,-1d0,1d0)
+        call HwU_book(l+8,'w log[pt]    '//HwUtype(i),100,0.1d0,5d0)
+        call HwU_book(l+9,'cphi[l,vl]   '//HwUtype(i),40,-1d0,1d0)
       enddo
 
       END
@@ -202,7 +204,8 @@ C EFFECT, SO THROW THE EVENT AWAY
          call HwU_fill(l+5,mtr,WWW)
          call HwU_fill(l+6,yw,WWW)
          call HwU_fill(l+7,ptw,WWW)
-         call HwU_fill(l+8,cphi,WWW)
+         if(ptw.gt.0.d0)call HwU_fill(l+8,log10(ptw),WWW)
+         call HwU_fill(l+9,cphi,WWW)
       enddo
       call HwU_add_points
  999  END

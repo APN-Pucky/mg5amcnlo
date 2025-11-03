@@ -18,7 +18,6 @@ different languages/frameworks (Fortran and Pythia8). Uses the PLY 3.3
 Lex + Yacc framework"""
 
 from __future__ import absolute_import
-from __future__ import print_function
 import logging
 import os
 import re
@@ -29,6 +28,7 @@ from six.moves import input
 root_path = os.path.split(os.path.dirname(os.path.realpath( __file__ )))[0]
 sys.path.append(os.path.join(root_path, os.path.pardir))
 
+import madgraph
 import madgraph.various.misc as misc
 
 from madgraph import MadGraph5Error
@@ -37,6 +37,8 @@ import vendor.ply.yacc as yacc
 import models.check_param_card as check_param_card
 
 logger = logging.getLogger('madgraph.ufo_parsers')
+if madgraph.ordering:
+    set	= misc.OrderedSet
 
 # PLY lexer class
 
@@ -160,7 +162,7 @@ class UFOExpressionParser(object):
 
     t_ignore = " \t"
 
-    re_cmath_function = re.compile("cmath\.(?P<name>[0-9a-zA-Z_]+)")
+    re_cmath_function = re.compile(r"cmath\.(?P<name>[0-9a-zA-Z_]+)")
 
     def t_newline(self, t):
         r'\n+'
@@ -823,6 +825,11 @@ class UFOExpressionParserCPP(UFOExpressionParser):
             p1 = p[1][1:-1]
         if p[3][0] == '(' and p[3][-1] == ')':
             p3 = p[3][1:-1]
+        try:
+            float(p3)
+        except ValueError:
+            p3 = str(eval(p3))
+
         if float(p3) == 2:
             p[0] = '((' + p1 + ')*(' + p1 + '))'
         elif float(p3) == 3:
@@ -870,7 +877,7 @@ class UFOExpressionParserCPP(UFOExpressionParser):
         elif p[1] == 'reglog': p[0] = 'reglog' + p[2]
         elif p[1] == 'reglogp': p[0] = 'reglogp' + p[2]
         elif p[1] == 'reglogm': p[0] = 'reglogm' + p[2]
-        elif p[1] in self.buitin_equiv: p[0] = self.builtin_equiv[p[1]] + p[2]
+        elif p[1] in self.builtin_equiv: p[0] = self.builtin_equiv[p[1]] + p[2]
         
 
     def p_expression_real(self, p):

@@ -13,10 +13,10 @@ BINDIR = ../../bin
 include ../arch_mcfio
 
 FFLAGS += -std=legacy
-CFLAGS += -Wno-implicit-function-declaration
+CFLAGS += -Wno-implicit-function-declaration -Wno-incompatible-pointer-types
 
 FINC = -I.
-CINC = -I.
+CINC = -I. -I/usr/include/tirpc
 HLIB =
 ifdef HISTO_DIR
    CFLAGS += -DHISTO

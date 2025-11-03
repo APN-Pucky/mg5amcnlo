@@ -125,7 +125,7 @@ C     Now we can call the matrix element!
 C     
       CALL SMATRIX_SPLITORDERS(P,MATELEMS)
       MATELEM=MATELEMS(0)
-      WRITE(*,*) '1) Matrix element for (QCD=0) = ',MATELEMS(1)
+      WRITE(*,*) '1) Matrix element for (QCD=0 QED=2) = ',MATELEMS(1)
 C     
       IF (NCHOSEN.NE.NSPLITORDERS) THEN
         WRITE (*,*) 'Selected squared coupling orders combination for'
@@ -296,7 +296,7 @@ C      the me
       DIMENSION Q(4,NEXTERNAL-NINCOMING),Z(NEXTERNAL-NINCOMING),R(4),
      $  B(3),P2(NEXTERNAL-NINCOMING),XM2(NEXTERNAL-NINCOMING),
      $  E(NEXTERNAL-NINCOMING),V(NEXTERNAL-NINCOMING),IWARN(5)
-      SAVE ACC,ITMAX,IBEGIN,IWARN
+      SAVE ACC,ITMAX,IBEGIN,IWARN,TWOPI,PO2LOG,Z
       DATA ACC/1.D-14/,ITMAX/6/,IBEGIN/0/,IWARN/5*0/
 C     *
 C     * INITIALIZATION STEP: FACTORIALS FOR THE PHASE SPACE WEIGHT

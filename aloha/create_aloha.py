@@ -63,7 +63,7 @@ class AbstractRoutine(object):
     """ store the result of the computation of Helicity Routine
     this is use for storing and passing to writer """
     
-    def __init__(self, expr, outgoing, spins, name, infostr, denom=None):
+    def __init__(self, expr, outgoing, spins, name, infostr, model, denom=None):
         """ store the information """
 
         self.spins = spins
@@ -76,7 +76,7 @@ class AbstractRoutine(object):
         self.combined = []
         self.tag = []
         self.contracted = {}
-        
+        self.model = model
 
         
     def add_symmetry(self, outgoing):
@@ -90,10 +90,10 @@ class AbstractRoutine(object):
         
         if lor_list not in self.combined:
             self.combined.append(lor_list)
-        
-    def write(self, output_dir, language='Fortran', mode='self', combine=True,**opt):
+
+    def write(self, output_dir, language='Fortran', mode='self', combine=True, options=None, **opt):
         """ write the content of the object """
-        writer = aloha_writers.WriterFactory(self, language, output_dir, self.tag)
+        writer = aloha_writers.WriterFactory(self, language, output_dir, self.tag, options)
         text = writer.write(mode=mode, **opt)
         if combine:
             for grouped in self.combined:
@@ -167,6 +167,7 @@ class AbstractRoutineBuilder(object):
             if mode == 0:
                 assert not any(t.startswith('L') for t in tag)
         self.expr = self.compute_aloha_high_kernel(mode, factorize)
+
         return self.define_simple_output()
     
     def define_all_conjugate_builder(self, pair_list):
@@ -240,7 +241,7 @@ in presence of majorana particle/flow violation"""
         infostr = str(self.lorentz_expr)
 
         output = AbstractRoutine(self.expr, self.outgoing, self.spins, self.name, \
-                                                    infostr, self.denominator)
+                                                    infostr, self.model, self.denominator)
         output.contracted = dict([(name, aloha_lib.KERNEL.reduced_expr2[name])
                                           for name in aloha_lib.KERNEL.use_tag
                                           if name.startswith('TMP')])
@@ -283,10 +284,9 @@ in presence of majorana particle/flow violation"""
         if not self.routine_kernel:
             AbstractRoutineBuilder.counter += 1
             if self.tag == []:
-                logger.info('aloha creates %s routines' % self.name)
-            elif AbstractALOHAModel.lastprint < time.time() - 1:
-                AbstractALOHAModel.lastprint = time.time()
-                logger.info('aloha creates %s set of routines with options: %s' \
+                logger.debug( 'aloha creates %s routines', self.name)
+            else:
+                logger.debug('aloha creates %s set of routines with options: %s' \
                             % (self.name, ','.join(self.tag)) )
             try:
                 lorentz = self.parse_expression()  
@@ -295,6 +295,10 @@ in presence of majorana particle/flow violation"""
             except NameError as error:
                 logger.error('unknow type in Lorentz Evaluation:%s'%str(error))
                 raise ALOHAERROR('unknow type in Lorentz Evaluation: %s ' % str(error)) 
+            except Exception:
+                msg = 'unknow Exception in Lorentz Evaluation (%s):%s' %(str(lorentz), str(error))
+                logger.error(msg)
+                raise ALOHAERROR(msg)                 
             else:
                 self.kernel_tag = set(aloha_lib.KERNEL.use_tag)
         elif isinstance(self.routine_kernel,str):
@@ -339,7 +343,7 @@ in presence of majorana particle/flow violation"""
                     #    #propagator incoming
                         lorentz *= complex(0,1) * SpinorPropagatorin('I2', id, outgoing)
                 elif spin == 3 :
-                    if massless or not aloha.unitary_gauge: 
+                    if massless or aloha.unitary_gauge in [0,3]: 
                         lorentz *= VectorPropagatorMassless(id, 'I2', id)
                     else:
                         lorentz *= VectorPropagator(id, 'I2', id)
@@ -479,6 +483,7 @@ in presence of majorana particle/flow violation"""
                 numerator =  "VFM(1,id)*VFMC(2,id)"
             denominator = "(2*Tnorm(id)*TnormZ(id))*(P(-1,id)*P(-1,id) - Mass(id) * Mass(id) + complex(0,1) * Mass(id) * Width(id))"
         elif propa == "1PS":
+            # This is for the photon/gluon phase-space gauge of Kentarou/Hagiwara
             numerator = "(-1*(P(-1,id)*PBar(-1,id)) * Metric(1, 2) + P(1,id)*PBar(2,id) + PBar(1,id)*P(2,id))"
             denominator = "(P(-3,id)*PBar(-3,id))*P(-2,id)**2"
         elif propa == "1N":
@@ -674,7 +679,7 @@ class AbstractALOHAModel(dict):
         # Option
         self.explicit_combine = explicit_combine
         # Extract the model name if combined with restriction
-        model_name_pattern = re.compile("^(?P<name>.+)-(?P<rest>[\w\d_]+)$")
+        model_name_pattern = re.compile(r"^(?P<name>.+)-(?P<rest>[\w\d_]+)$")
         model_name_re = model_name_pattern.match(model_name)
         if model_name_re:
             name = model_name_re.group('name')
@@ -795,13 +800,20 @@ class AbstractALOHAModel(dict):
         if hasattr(self, 'cached_interaction_infos'):
             # Now try to recover it
             for info_key in infos:
+                all_done = True
                 try:
                     returned_dict[info] = self.cached_interaction_infos[\
                                          (lorentzname,outgoing,tuple(tag),info)]
                 except KeyError:
                     # Some information has never been computed before, so they
                     # will be computed later.
-                    pass             
+                    all_done = False
+                    pass
+            if all_done:             
+                if isinstance(info, str):
+                    return returned_dict[info]
+                else:
+                    return returned_dict
         elif cached:
             self.cached_interaction_infos = {}
 
@@ -865,14 +877,22 @@ class AbstractALOHAModel(dict):
                 for vertex in self.model.all_vertices:
                     if lorentz in vertex.lorentz:
                         for i,part in enumerate(vertex.particles):
-                            new_prop = False
+                            new_props = [['P1N']] # default add those for hel recycling
                             if hasattr(part, 'propagator') and part.propagator:
-                                new_prop = ['P%s' % part.propagator.name]
+                                new_props.append(['P%s' % part.propagator.name])
                             elif part.mass.name.lower() == 'zero':
-                                new_prop = ['P0'] 
-                            if new_prop and (i+1, new_prop) not in routines:
-                                routines.append((i+1, new_prop))
-            
+                                new_props.append(['P0']) 
+                            # routine for polarised production
+                            if part.spin == 3: # vector
+                                new_props += [['P1L'], ['P1T'], ['P1A']]
+                                if part.mass.name.lower() == 'zero':
+                                    new_props.append(['P1PS']) # phase-space gauge 
+                            elif part.spin == 2: #fermion
+                                new_props += [['P1P'], ['P1M']]
+                            for new_prop in new_props:
+                                if new_prop and (i+1, new_prop) not in routines:
+                                    routines.append((i+1, new_prop))
+
             builder = AbstractRoutineBuilder(lorentz, self.model)
             self.compute_aloha(builder, routines=routines)
 
@@ -917,6 +937,8 @@ class AbstractALOHAModel(dict):
         tag should be the list of special tag (like conjugation on pair)
         to apply on the object """
 
+        logger.info('aloha starts to compute helicity amplitudes')
+        start = time.time()
         # Search identical particles in the vertices in order to avoid
         #to compute identical contribution
         self.look_for_symmetries()
@@ -1036,8 +1058,8 @@ class AbstractALOHAModel(dict):
                         # Compute routines
                         self.compute_aloha(conjg_builder, symmetry=lorentz.name,
                                         routines=routines)
-                      
-  
+        
+        logger.info("aloha creates %s routines in  %0.3f s", AbstractRoutineBuilder.counter, time.time()-start)
                             
     def compute_aloha(self, builder, symmetry=None, routines=None, tag=[]):
         """ define all the AbstractRoutine linked to a given lorentz structure
@@ -1087,10 +1109,17 @@ class AbstractALOHAModel(dict):
             self.set(name, outgoing, wavefunction)
 
 
-    def write(self, output_dir, language):
+    def write(self, output_dir, language, options=None):
         """ write the full set of Helicity Routine in output_dir"""
+
+        if options is None:
+            self.options = {'vector.inc':False}
+        else:
+            self.options = options
+
         for abstract_routine in self.values():
-            abstract_routine.write(output_dir, language)
+            #misc.sprint(abstract_routine.name, abstract_routine.outgoing, abstract_routine.spins, abstract_routine.expr)
+            abstract_routine.write(output_dir, language, options=self.options)
 
         for routine in self.external_routines:
             self.locate_external(routine, language, output_dir)
@@ -1297,7 +1326,7 @@ def write_aloha_file_inc(aloha_dir,file_ext, comp_ext):
         aloha_files.append('additional_aloha_function.o')
     
     text="ALOHARoutine = "
-    text += ' '.join(aloha_files)
+    text += ' '.join(sorted(aloha_files))
     text +='\n'
     
 

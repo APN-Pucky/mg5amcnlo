@@ -53,6 +53,8 @@
       open(unit=10,file=basicfile,status='old')
       open(unit=98,file=nextbasicfile,status='unknown')
 
+      call get_orderstags_glob_infos()
+
 c
 c First get the cross section from the res_1 files
 c
@@ -231,7 +233,8 @@ c
      # MOTHUP(2,MAXNUP),ICOLUP(2,MAXNUP)
       DOUBLE PRECISION XWGTUP,SCALUP,AQEDUP,AQCDUP,
      # PUP(5,MAXNUP),VTIMUP(MAXNUP),SPINUP(MAXNUP)
-      character*140 buff
+      DOUBLE PRECISION SCALUP_a(MAXNUP,MAXNUP)
+      character*1000 buff
       character*10 MonteCarlo,MonteCarlo1, MonteCarlo0
       character*100 path
       integer iseed
@@ -253,6 +256,10 @@ c
       double precision xsec(100),xsecABS,xerr(100)
       logical get_xsec_from_res1
       common/total_xsec/xsec,xerr,xsecABS,proc_id_tot,get_xsec_from_res1
+c Common blocks for the orders tags
+      integer n_orderstags,oo
+      integer orderstags_glob(maxorders)
+      common /c_orderstags_glob/n_orderstags, orderstags_glob
 c
       maxevt=0
       if (.not. get_xsec_from_res1) then
@@ -409,9 +416,10 @@ c      header. Check consistency in this case
       do i=1,maxevt
         rnd=fk88random(iseed)
         call whichone(rnd,numoffiles,itot,mx_of_evt,junit,iunit,i0)
+        SCALUP_a=-1d0
         call read_lhef_event(iunit,
      #    NUP,IDPRUP,XWGTUP,SCALUP,AQEDUP,AQCDUP,
-     #    IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,buff)
+     #    IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,buff,SCALUP_a)
         if (proc_id(i0).ne.-1) IDPRUP=proc_id(i0)
         if (i_orig.eq.0) then
            evwgt_sign=XWGTUP
@@ -420,18 +428,20 @@ c Overwrite the weights. Also overwrite the weights used for PDF & scale
 c reweighting
            evwgt_sign=dsign(evwgt,XWGTUP)
            if (do_rwgt_scale) then
-              do kk=1,dyn_scale(0)
-                 if (lscalevar(kk)) then
-                    do ii=1,nint(scalevarF(0))
-                       do jj=1,nint(scalevarR(0))
-                          wgtxsecmu(jj,ii,kk)=wgtxsecmu(jj,ii,kk)
-     $                         *evwgt_sign/XWGTUP
+              do oo=0,n_orderstags
+                 do kk=1,dyn_scale(0)
+                    if (lscalevar(kk)) then
+                       do ii=1,nint(scalevarF(0))
+                          do jj=1,nint(scalevarR(0))
+                             wgtxsecmu(oo,jj,ii,kk)=wgtxsecmu(oo,jj,ii,kk)
+     $                            *evwgt_sign/XWGTUP
+                          enddo
                        enddo
-                    enddo
-                 else
-                    wgtxsecmu(1,1,kk)=wgtxsecmu(1,1,kk)
-     $                   *evwgt_sign/XWGTUP
-                 endif
+                    else
+                       wgtxsecmu(oo,1,1,kk)=wgtxsecmu(oo,1,1,kk)
+     $                      *evwgt_sign/XWGTUP
+                    endif
+                 enddo
               enddo
            endif
            if (do_rwgt_pdf) then
@@ -448,7 +458,7 @@ c reweighting
         endif
         call write_lhef_event(ioutput,
      #    NUP,IDPRUP,evwgt_sign,SCALUP,AQEDUP,AQCDUP,
-     #    IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,buff)
+     #    IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,buff,SCALUP_a)
       enddo
       write(ioutput,'(a)')'</LesHouchesEvents>'
       return

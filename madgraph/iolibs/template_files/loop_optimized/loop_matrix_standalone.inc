@@ -242,6 +242,7 @@ C GLOBAL VARIABLES
 C 
       include 'process_info.inc'
       include 'unique_id.inc'
+      %(include_vector)s
       include 'coupl.inc'
 	  include 'mp_coupl.inc'
 	  include 'MadLoopParams.inc'
@@ -658,6 +659,14 @@ OPEN(1, FILE=LoopFilterFN, err=100, status='OLD',           action='READ')
   ENDDO
 101  CONTINUE
 CLOSE(1)
+
+IF (.NOT.USELOOPFILTER) THEN
+  DO J=1,NLOOPGROUPS
+    DO I=1,NSQUAREDSO
+      GOODAMP(I,J)=.True.
+    ENDDO
+  ENDDO
+ENDIF
 
 IF (HelicityFilterLevel.eq.0) then
   FOUNDHELFILTER=.TRUE.
@@ -2296,6 +2305,46 @@ C
 	  WRITE(*,*) 'ERROR:: Stopping function %(proc_prefix)sML5SOINDEX_FOR_SQUARED_ORDERS'
 	  WRITE(*,*) 'Could not find squared orders ',(ORDERS(I),I=1,NSO)
 	  STOP
+
+      END
+
+      INTEGER FUNCTION %(proc_prefix)sGETORDPOWFROMINDEX_ML5(IORDER, INDX)
+C
+C Return the power of the IORDER-th order appearing at position INDX
+C in the split-orders output
+C
+C %(split_order_str_list)s
+C
+C CONSTANTS
+C
+      INTEGER    NSO, NSQSO
+	  PARAMETER (NSO=%(nSO)d, NSQSO=%(nSquaredSO)d)
+C
+C ARGUMENTS
+C
+      INTEGER ORDERS(NSO)
+C
+C LOCAL VARIABLES
+C
+      INTEGER I,J
+	  INTEGER SQPLITORDERS(NSQSO,NSO)
+	  %(SquaredSO)s
+C
+C BEGIN CODE
+C
+      IF (IORDER.GT.NSO.OR.IORDER.LT.1) THEN
+      WRITE(*,*) "INVALID IORDER ML5", IORDER
+      WRITE(*,*) "SHOULD BE BETWEEN 1 AND ", NSO
+      STOP
+      ENDIF
+
+      IF (INDX.GT.NSQSO.OR.INDX.LT.1) THEN
+      WRITE(*,*) "INVALID INDX ML5", INDX
+      WRITE(*,*) "SHOULD BE BETWEEN 1 AND ", NSQSO
+      STOP
+      ENDIF
+
+      %(proc_prefix)sGETORDPOWFROMINDEX_ML5=SQPLITORDERS(INDX, IORDER)
 
       END
 

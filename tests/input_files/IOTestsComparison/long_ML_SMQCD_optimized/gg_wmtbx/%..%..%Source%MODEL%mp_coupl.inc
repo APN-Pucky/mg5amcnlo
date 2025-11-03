@@ -12,17 +12,19 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
       COMMON/MP_RSCALE/ MP__MU_R
 
 
-      REAL*16 MP__MDL_MH,MP__MDL_MTA,MP__MDL_MW,MP__MDL_MB,MP__MDL_MZ
-     $ ,MP__MDL_MT
+      REAL*16 MP__MDL_MB,MP__MDL_MH,MP__MDL_MT,MP__MDL_MTA,MP__MDL_MW
+     $ ,MP__MDL_MZ
 
-      COMMON/MP_MASSES/ MP__MDL_MH,MP__MDL_MTA,MP__MDL_MW,MP__MDL_MB
-     $ ,MP__MDL_MZ,MP__MDL_MT
+      COMMON/MP_MASSES/ MP__MDL_MB,MP__MDL_MH,MP__MDL_MT,MP__MDL_MTA
+     $ ,MP__MDL_MW,MP__MDL_MZ
 
 
       REAL*16 MP__MDL_WH,MP__MDL_WT,MP__MDL_WW,MP__MDL_WZ
 
       COMMON/MP_WIDTHS/ MP__MDL_WH,MP__MDL_WT,MP__MDL_WW,MP__MDL_WZ
 
+
+      COMPLEX*32 MP__GC_11
 
       COMPLEX*32 MP__GC_4,MP__GC_5,MP__GC_6,MP__R2_3GQ,MP__R2_3GG
      $ ,MP__R2_GQQ,MP__R2_GGQ,MP__R2_GGB,MP__R2_GGT,MP__R2_GGG_1
@@ -32,7 +34,6 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
      $ ,MP__UVWFCT_G_1_1EPS,MP__R2_BXTW,MP__UV_3GB,MP__UV_3GT
      $ ,MP__UV_GQQB,MP__UV_GQQT,MP__UV_BMASS,MP__UV_TMASS
      $ ,MP__UVWFCT_B_0,MP__UVWFCT_T_0,MP__UVWFCT_G_1,MP__UVWFCT_G_2
-     $ ,MP__GC_11
 
       COMMON/MP_COUPLINGS/ MP__GC_4,MP__GC_5,MP__GC_6,MP__R2_3GQ
      $ ,MP__R2_3GG,MP__R2_GQQ,MP__R2_GGQ,MP__R2_GGB,MP__R2_GGT

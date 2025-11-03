@@ -1,7 +1,404 @@
-Update notes for MadGraph5_aMC@NLO (in reverse time order)
+    Update notes for MadGraph5_aMC@NLO (in reverse time order)
+
+ANNOUNCEMENT: 
+   2.9.X version as a LONG TERM STABLE has now an end of life for bug fixing/support in december 2025.
+   A new LTS (based on current 3.5.X) is starting now and will act as stable release for the coming years.
+
+3.6.6 (30/10/25):
+     OM: Fix serious bug on the lhe writting of events where some intermediate particle were wrongly written in the file.
+     OM: change in default restriction for coupling order for BSM (closer to 2.9.x behaviour)
+     OM: new plugin feature: possibility to customize the entry in the scan summary file
+     OM: Fix the support of some electron/muon PDF at LO
+     OM: User using git will now have the git version/tag printed in the banner of MG5aMC instead of a warning
+    
+3.6.5 (17/10/25):
+     MZ: Ensure that the code is crashing at NLO when the analysis contains a syntax error
+     OM: add a "compile" command at LO
+     OM: Fix a bug in the cudacpp where the color of the events was wrongly selected when writting the events into lhef file
+
+3.6.4 (13/9/25):
+     RF: Fixed critical bug in FxFx merging, introduced in version 3.3.1. This resulted in too many negatively weighted events,
+         and too many high-pT jets. Particularly relevant for merging with up to 2 or 3 jets at NLO. Thanks to Lenart Jerala
+	 for pointing this out and testing the fixes.
+
+    ALL: Merge with 3.5.10/2.9.25 bug fix (see below)
+         Include change in the polarization reported for intermediate particle
+        (9 reported now instead of 0)
+
+3.6.3 (12/6/25):
+     OM: Fix conversion model for the FD gauge
+     OM: Include all bug fix from 3.5.9 and 2.9.24
+     OM: Fixing a bug that EW was by default on NLO+PS mode and not fixed order
+
+3.6.2 (19/3/25):
+      RF: Implemented flavour_bias parameter in the NLO run-card to allow for biassed event generation
+          based on the flavours of the external particles, as used in 2403.14419.
+      RF: Use a grid for the running of alpha_S (NLO only and only when not using LHAPDF). 
+      Andy Buckley: change jpg output by png output for better quality (with OM)
+      RF: Updated histograms.py to prevent warnings/errors with latest gnuplot version
+      OM: Update Color computation (that part of the computation is close to two times faster and 
+          much faster to compile)
+
+3.6.1 (29/11/24):
+      OM+MZ: Fix a bug for lhapdf at NLO where the code was incorectly changed like the LO version (and was crashing at compilation)
+      OM: Fixing various compilation issue at LO
+      ALL: Include fix from LTS 3.5.7 and 2.9.22
+           - including some rare but serious bug in scan
+           - including support for python 3.13 (but for f2py related feature)
+
+3.6.0 (30/09/24):
+      PT+RF: fixed the Pythia8 script so that SCALUP in the LHE file is ignored only when using FxFx or MC@NLO-Delta
+      OM: Allow the scan command within the run_card.
+          Note that such command can NOT be used if the scan command is used in the param_card.
+          so the following command is now working:
+          set ebeam scan1:[6500,7000]
+          Thanks to Kentarou Mawatari for pushing me to implement this.
+      DP+TV+MZ: Implementation of EW Sudakov corrections. See 2110.03714 and 2309.00452
+      AV+SR+SH+ZW+DM+OM: Implementation of the support for batch of events at LO.
+          This will allow to support the cudacpp plugin that will offer
+            - GPU support for LO processes
+            - SIMD support on cpu
+          Those modes need to install the cudacpp plugin (can be done via the command "install cudacpp")
+          This feature also add OpenMP support for LO process (deactivated by default and which does not need the plugin).
+      OM+JK+KM+KH+YJZ: implementation of the FD gauge via "set gauge FD" [2203.10440, 2405.01256]
+
+###### LTS 3.5.X
+
+3.5.12 (30/10/25):
+  OM: Change in gensym to better determine which channel have impossible BW configuration. This removes many spurious warning.
+  OM: include bug fixing from LTS (2.9.26) --see below --
+
+3.5.11 (19/9/25):
+  RF: Fixed critical bug in FxFx merging, introduced in version 3.3.1. This resulted in too many negatively weighted events,
+      and too many high-pT jets. Particularly relevant for merging with up to 2 or 3 jets at NLO. Thanks to Lenart Jerala
+	  for pointing this out and testing the fixes.
+
+3.5.10 (13/9/25):
+  All: propagate bug fixing from 2.9.x version (up to 2.9.25)
+
+3.5.9 (4/6/25):
+  OM: Fixed an issue in fixed_fact_scale when set to T where sometimes some beam where kept on False (in assymetric beam context)
+  OM: Fixed a wrong scale assignment when beam#2 was dynamic but beam#1 was static (at LO)
+  ALL: Include fix from 2.9.24 (including support to GCC15 + bug in madspin with GCC13) 
+  OM: (thanks to SungBeom Cho) crash when running  multi_run during the merging of multiple lhe file if 
+      MadSpin was activated (if the BR was different of one). If the BR=1, the merging was going trough but 
+      the merged sample will contains both decay and undecay sample making that file pointless.
+
+3.5.8:
+  OM: Fix a quite serious bug introduced in 3.2.0:
+      The scale choice can in some cases be assigned in a assymetric way in precessence of mirror process
+      This was leading to an assymetric z -> -z production for LHC process.
+  OM: Fixing a gridpack issue that cross-section was wrongly reported in the comment of the banner
+      Thanks to Joon-Bin-Lee and the CMS validation team to have identified those two bugs.
+  OM: Include fix from LTS 2.9.23
+
+3.5.7 (29/11/24)
+  OM: Include fix from LTS 2.9.22
+
+3.5.6 (26/9/24):
+  OM: Include fix from LTS 2.9.21
+  OM: fixing gridpack with large number of events (issue with the new strategy of combining events)
+
+3.5.5 (17/06/24):
+     OM: Fix a bug in the new strategy of combining events.
+     OM: Allow slurm/condor cluster to specify the wall time of the jobs (cluster_walltime)
+     OM: add new (hidden) entry in the run_card to force to keep all the log file (keep_log)
+     OM: Fixing a matchbox issue (introduced in 2.9.0)
+     OM: Dynamical scale choice for NLO can now be set via custom_fcts (was bugged before)
+     OM: INclude fix from (other) LTS 2.9.20
+
+3.5.4 (05/04/23):
+      MZ+RF: Bug fixes:
+        1) a bug related to event-generation, when virtual corrections include more than one
+        coupling combination (so NLO QCD to SM processes were **not** affected), in particular 
+        when the coupling combinations have different sign. The contribution
+        from the virtual amplitude was wrongly accounted for, resulting in unphysical distributions.
+        Thanks to Haoquan Ren for reporting it.
+        2) a bug related to NLO EW corrections at lepton colliders, for initial-state FKS configuration.
+        Phase-space points for which the real-emission momentum generation was failing but the Born one
+        was passing were thrown away altogether.
+        Thanks to Riccardo Lubello for leading to the identification of the bug.
+      OM: Change the way restriction model work to be more agressive in the data structure.
+          This was trigger by the fact that the virtual was consider different if some unused lorentz structure
+          was left in the model/interaction. This allow to get back to the behaviour of the LTS version in term 
+          of number of directories for QCD processes and therefore gain disk area and speed-up the code.
+      OM: Change in the unweighting strategy for process with a large number of channel (>80). 
+          If you have deactivated the limit of number of open file (via the ulimit command) then the unweighting will be 
+          done in a single step in one core (typically the most efficient strategy).
+          If not possible, then  the unweighting will be done by packet of 80 channel in a multi-core way.
+          Then those packet will be merged together in a second step (single core).
+          In this second case the algorithm has also been made more agressive. 
+          Speed-up of factor 20 have been observed in some extreme cases.
+          Thanks to Mark Goodsell and Stephan Hageboeck, for pushing me on this and for your help.
+      OM: Python3.12 status:
+          - many (python) warning are raised when running with python3.12. Work is in progress (and will be very long) to 
+           remove all those warnings.
+          - f2py (needed for reweighting/madspin) is quite impacted the drop of disutils and typically fails to compile
+            with the meson backend. numpy version 2.x (not yet release) will be minimum for reweighting/madspin.
+      OM: Allow (back) LHE output in fixed-order format (thanks Gauthier)
+      OM: Change the internal representation of fixed_order card, that allow to use the set command to edit the card.
+          like for the param_card/run_card/...
+      OM: relax polarization restriction at NLO for massless particles.
+      SJ+OM: fix some issue with non saving correctly where fastjet was installed when installing it via MG5aMC install command
+      SJ: Fixing rivet running due to some library not correctly linked
+      OM: Include bug fix from 2.9.19
+
+3.6.0:
+      OM: Stop support for model in the legacy v4 format
+
+3.5.3 (22/12/23)
+      OM: Include Bug fix from 2.9.18
+      OM: Update inner representation of the shower_card allowing to support any py8 parameter
+
+3.5.2 (08/11/23)
+      MZ: fixing issue for 2>1 processes at NLO accuracy (like p p > Z [QCD])
+          For most compiler, the process was just crashing but some compiler were returning absurdly large cross-section
+      RF: update test at NLO to better include phase-space cut
+      OM: Change restriction model to be less sensitive to numerical accuracy
+      OM: bug fixing from LTS up to 2.9.17 (see below)
+      PT: added options for matrix-element corrections in shower card fot PY8
+      
+3.5.1 (11/07/23)
+      SH+OM: Update interface for contur
+      OM: fix an issue with NLO reweighting introduced in 3.4.0 where loop scale was not correctly set anymore
+      OM: Better determination of zero helicity for helicity recycling part of the code
+      OM: Fix issue for powheg output
+      OM: bug fixing from LTS up to 2.9.16 (see below) 
+      
+3.5.0 (12/05/23)
+      VB+MC+SF+GS+MZ+XZ: NLO EW implemented for lepton-lepton collisions with ISR and beamstrahlung
+	      See 2207.03265 and the FAQ https://answers.launchpad.net/mg5amcnlo/+faq/3324 for details. 
+	      NNL-accurate parton distributions for lepton collisions are provied by eMELA 
+	      https://github.com/gstagnit/eMELA/releases
+      SF+MZ+PT+PY8author: Introduction of MCatNLO-Delta, a new matching procedure allowing to have less
+          negative events generated (see 2002.12716)
+      OM: MadSpin has now a syntax for handling semi-leptonic decay
+          not supported in spinmode=onshel/none
+      OM: possibility to install eMELA (install eMELA)
+      HS: Adding support of UPC
+      Bruno-Miguel-Oliveira: conform with the XDG Base Directory Specification for history/config file:
+          https://github.com/mg5amcnlo/mg5amcnlo/pull/45
+      OM: bug fixing from LTS up to 2.9.15 (see below)
+
+3.4.2 (20/01/22)
+      ALL: fixing bugs related to 2.9.13 (Long Term Stable: see below)
+      OM: fix issue with hepmcremove (thanks to franaln)
+      OM: fix some issue with addmodel
+      OM: fix issue with the update of the param_card to set the used value for alphas
+      OM: fix issue with wrong env variable for pythia8data (thanks pavel)
+
+3.4.1 (01/09/22)
+      MZ+CS: PineAPPL now supports user-defined bias_wgt_functions.
+      RF: removed a write statement in the reweighting routine (to get scale and PDF uncertainties at NLO+PS runs) that cluttered the reweight_xsec_events.output log files.
+      OM: Fixing an issue with lhapdf when trying to use an pdf set not yet installed within the database
+      All: in sync with bug fixing in LTS (version 2.9.12)
+
+
+3.4.0 (06/05/22)
+      SJ: Allowing to use RIVET/CONTUR from madgraph. In presence of scan, such running can also be done
+          at the end of the scan. (Contribution from Sihyun Jeon)
+      OM: Allow to have EFT operator to run for some special UFO model (quite restricted class of running are supported
+          -- corresponding to EFT running --) 
+      OM: change reweighting/spinmode=onshell (from maddspin) to use the average of the matrix-element when it exists an order ambiguity in the matrix element like for the following process:
+      p p > e+ ... z, z > e+ e-
+      where permuting the momenta of the "e+" does not lead to the same
+      matrix-element.
+      CF: include notification when jobs are done in the unix notification center if executable notify-send is present.
+          Contribution from Carlo Flore.
+      All: Droping the support for python2.7
+      All: include bug fix from Long Term Stable version (2.9.10) see below
+
+3.3.2(18/03/22)
+      OM: (re)allow --loop_filter=True/... syntax for MC@NLO
+      RF: Fixed a bug in the phase-space generation of MadSpin,
+          relevant for processes with more than 1 t-channel.
+      MZ: Restored functionalities for processes with external photons and 
+        only QCD corrections
+      all: include all bug fix from the LTS version (2.9.9)
+           including important bug on MLM generation
+	   
+3.3.1 (04/12/21)
+      RF: Fix for bug #1928364 related to the new FxFx clustering routines.
+      OM: Fix for bug #1952050 systematics/reweighting run at NLO that was broken
+          introduced in 3.3.0
+      OM: Fix bug related to python 3.10
+      OM: Fix bug when running from the process directory
+      all: include all bug fix from the LTS version (2.9.7)
+           including important bug on MC@NLO and on madspin
+
+
+3.3.0 (12/11/21)
+      DP+HS+IT+MZ: EW corrections can be computed for tagged photons
+      OM+RR+AC: Implementation of EWA within MG5aMC (PDF for W/Z boson out of lepton beam)
+      MZ+CS: A fix in amcatnlo_run_interface to prevent integer overflows when a
+        very high precision is requested.
+      MZ+CS: Fixes/improvements relevant to PineAPPL: 
+            - the function pineappl_grid_optimize is called by pineappl_interface,
+              to reduce the size of the grids. PineAPPL v0.5 or later is required
+            - minor fix on the gluon pdg code in pineappl_interface.cc
+            - the integration channels are threated the same way with or without PineAPPL 
+            (maxchannels is kept the same in both cases)
+      RF: Fix for montecarlocounter in case the Born is not strictly positive
+           (i.e., only interference contributions).
+      RF+IT: Rewritten the clustering code for FxFx. This allows for
+             seperation of QCD and EW jets. Needs special JetMatching.h for
+             Pythia8 (can be found in Template/NLO/MCatNLO/Scripts/JetMatching.h)
+      OM: adding a new cut dsqrt_shat to set a minimum center of mass energy cut	   
+      OM: allow the support of latest LUX PDF with lepton content of the proton
+          Note that running PY8 is automatically forbidden in that case.
+      ALL: include bug fixing from Long Term Stable version  version (2.9.6) see below
+      OM+RR: better handling of multiparticles with both photon and massive vector when
+         the user ask for longitudinal polarization. longitudinal photon are automaticlly
+	 discarded. (This overwrite LTS fix that was simply making the code to crash)
+      OM: Fixing a bug introduced in 3.1.0, with the automatic setup of FxFx
+          was broken.
+      OM: Code update to avoid randomness in ordering in code generation (only in debug mode)	  
+         
+
+3.2.0 (22/08/21)
+      SF/OM/MZ/XZ: Implementation (at LO) of ISR and beamstrhalung for e+e- collider
+      BUG FIX (from 2.9.5 long term stable, see below)
+      OM: Fix an infinite loop when running with condor cluster
+          or with other cluster/multi-core when cluster_temp_path
+	  was used.
+      
+3.1.1 (28/05/21)
+      ALL: put a crash for potentially ambiguous syntax with explanation
+           on how to bypass such crash via a new entry in
+	   input/mg5_configuration.txt
+      BUG FIX (from 2.9.4 long term stable)
+
+3.1.0 (30/03/21)
+    ALL: include all changes up to 2.9.3 of the 2.x release
+    ALL: pass to python3 by default
+    MZ+RF+OM: Fix relevant to the case when PDG specific cuts are set in the NLO run_card.
+        The generation of tau was not taking into account the information.
+    DP+HS+MZ: Allow for the computation of NLO EW and complete NLO corrections in the 4FS
+    MZ+SC+ERN+CS: The code can be linked to PineAPPL (arXiv:2008.12789), making it possible
+	 to generate PDF-independent fast-interploation grids including EW corrections.
+	 This supersedes the interface to ApplGrid+aMCFast which was not working in v3
+    MZ: Change syntax meaning in 3.0 series to be consistent with the one of 2.0 series:
+        QCD<=X, QED<=Y apply at the amplitude level (not to the squared amplitude anymore).
+        Squared-amplitude constraints can be imposed by using the usual squared-order 
+        syntax, e.g.:
+	QCD^2<=X, QED^2<=Y (constrained at the diagram squared level).
+    MZ: Different coupling combinations and their scale variations are written in the
+        event file as extra weights
+    OM: Some aliases have been added for the orders constraints:
+            - aEW<=X / aS<=Y is equivalent to QCD^2<=2X / QED^2<=2Y
+            - EW<=X / EW^2<=X is equivalent to QED<=X / QED^2<=X
+
+                        ** Long Term Stable Update **
+
+2.9.26 (30/10/25):
+  OM: setup the code to not print the python3.12 syntax warning anymore (still printed in debug mode)
+  OM: fix card edition issue when combining "set" and "edit" command
+  OM: fix some additional issue related to GCC15
+
+
+2.9.25 (11/9/25):
+  OM: (thanks to SungBeom Cho) crash when running  multi_run during the merging of multiple lhe file if 
+      MadSpin was activated (if the BR was different of one). If the BR=1, the merging was going trough but 
+      the merged sample will contains both decay and undecay sample making that file pointless.
+      (fixed first in 3.5.9)
+  OM (thanks to Julien for the help) fixing wrong color computation in presence of sextet where the color matrix
+     was wrong starting at 2>4
+
+2.9.24 (23/05/25)
+    OM: Fix Some compilation issue with GCC15 compiler
+    OM: Fix a serious bug in MadSpin where the benchmark use to generate the sample was ignored by MadSpin and it was using the default of the benchmark instead. This was clearly indicated by warning stating the fact that the default benchmark was used.
+        This bug is more compiler specific than madgraph specific, so this bug is likely present since MG5aMC v2.0.0 if you use a recent version of GCC (like GCC13 or GCC14)
+
+2.9.23 (14/03/25)
+    MZ:fix in pseudorapidity function in lhe_parser FourMomentum class (super minor issue) 
+
+2.9.22 (29/11/24):
+    OM: Fix a (NLO) issue if the environment variable was setting FFLAGS
+    OM: set auto_update X, now automatically set the configuration file (as it should).
+    OM: Fix a bug in helicity recycling with scan for rare case where a matrix element is first correct, then zero, then has a single helicity.
+        In that third case, the code was not recompiled correctly and was picking the wrong amplitude.
+        Thanks to Matteo Maltoni for finding such bug
+    OM: Starting support for python3.13, as for python3.12 functionallity like reweighting will not work with 2.9.x LTS branch.
+
+2.9.21 (26/9/24):
+    OM: Adding support for GCC14 (thanks to joequant)
+    OM: Fixing a rare issue within aloha where some generated code was not compiling
+    OM: Fix issue with Pythia8 when running in run_mode=0
+    OM: Fixing gnuplot related issue (when pythia8 was running)
+    OM: Avoid numerical inacuracy issue when the user were requested boost to the center of mass frame for non lorentz invariant amplitude
+    OM: Avoid to use sde=2 by default for more processes (like Drell-Yan)
+    
+2.9.20 (17/6/24):
+    OM: Fix a wrong syntax handling for decay chain like
+        generate ... > A A B  , B > ,  A >  , A >
+        where due to the different order in production (AAB) and in decay (BAA)
+        all A particle where decay with both decay mode, instead of their specific ones.
+        (present since v1.0.0)
+        Note this bug can still be present if A or B are multi-particles, in that case we advise to use
+        the same order for the production and decay syntax.
+    OM: Fix an issue with helicity recycling if some processes did not have available phase-space.
+        In some situation, the cross-section was reported as simply zero even if other processes where
+        kinematically allowed (thanks Sihyun Jeon)
+    OM: Improving the detection of cache invalidity for UFO model (thanks A. Valassi)
+    OM: Fix compilation of Stdhep on some unix machine (thanks jmcarcell)
+    OM: Fix an issue with the weight normalization when running PY8@LO
+
+
+2.9.19 (20/03/24):
+    OM: Fix a "cot" issue introduced in 2.9.18.
+    OM: Fixing some regular expression for the way fortran writter works.
+        The bugged expression was not spotted as problematic for the LTS version.
+    OM: Fix some compiler issue with modern compiler for rambo (standalone mode)
+    OM: Fix one rare bug for helicity recycling (case without propagator)
+
+2.9.18 (08/12/23):
+    OM: Fix a bug for processes extremelly close to threshold, where the 
+        the initial grid for some angle was wrongly biased towards \tetha=\pi.
+        In extreme case, the determination of the non-zero helicity was starting to 
+        remove helicity proportional to (1+\cos\theta) since theta was so close to \pi.
+        While the grid bias was corrected after the first iteration, the accidental removal of helicity
+        could lead to a bias in the cross-section. One way to detect if you are impacted by such bug is to 
+        run 5 times with different seed, if the cross-section fluctuates between two values then you are 
+        impacted by such issue.
+    OM: Implement better handling of the phase-space when you have a S-channel breit-wigner but that cut prevent 
+        such resonance to be onshell. (Thanks Sihyun Jeon)
+    OM: Implement better handling of the MMNL cut if the process has exactly two leptons (including neutrino).
+        This improves the phase-space integrator when MMNL is used for putting invariant mass cut on single W production
+    OM: Change the support of the function "cot" within ufo model to have it consistent with UFO convntion. 
+        It might potentially impact old UFO model, please contact us if this is the case    
+    OM: Fix a critical bug when exporting code with two different model where the second model was not correctly imported
+        (likely a python3 only bug)
+    OM: Fixing issue when using cluster_tmp_dir in multicore mode    
+    OM: add a warning concerning the status with python3.12        
+
+2.9.17(19/10/23):
+    OM: change integration strategy (SDE=1) for width computation
+    OM: clearer error message in some situation
+
+2.9.16(26/07/23):
+     OM: fix for helicity recycling
+     OM: Update numpy support to latest version
+     OM: Fix some interface issue
+
+2.9.15 (12/05/23)
+     OM: Fix a bug where the number of core sed was higher than requested
+     OM: Reduce RAM used by madspin
+     OM: Fix a rare issue with helicity recycling leading to incorect format in the generated code (and crash)
+     OM: Fix issue with param_card parsing for some block not related to the model
+     OM: Fix compilation error for stdhep
+     OM: Fix one issue for sextet model/process
+     
+2.9.14 (17/02/2023)
+     OM: Fix some "output aloha" command, where some routine where not defined
+     OM: Fix a crash in the multicore mode when 0 job was needed. (introduced in 2.9.13)
 
 2.9.13 (01/12/2022)
      OM: Fixing display diagrams on MacOS Catalina
+     OM: fixing issue within reweighting module where runname was not respected during scan
+     OM: remove unused thread which should allow large scan
+     OM: fix a compilation issue of IREGI
+     OM: fix auto-download of pdf
+     OM: fix systematics.py which was not called with the most appropriate default for matching/merging generation (MLM)
 
 2.9.12 (09/08/2022)
      OM: Fixing issue with model (like SMEFTatNLO) where some interactions where using more than 9 coupling
@@ -21,7 +418,6 @@ Update notes for MadGraph5_aMC@NLO (in reverse time order)
 	 multi-particle "j" and "b". This bug was present since 2.3.1 (where the flipping of such
 	 multi-particle to 4/5 flavor was done automatically for the first time)
 	 
-
 2.9.10 (06/05/2022)
      OM: allow model with GC in their name to use helicity recycling
      OM: Forbid madspin to run with crazy value of BWcut
@@ -79,12 +475,11 @@ Update notes for MadGraph5_aMC@NLO (in reverse time order)
 	 
 2.9.5 (22/08/21)
       OM+LM: [LO only] Fix the factorization scale dependence for lpp=2/3/4.
-             This was claimed to be using fixed scale computation while in
-	     some case the scale was dynamical
-             To have full flexibility we introduced two additional (hidden)
-	     parameter
-             fixed_fac_scale1 and fixed_fac_scale2 that allow to choose
-	     fixed scale for only one beam.
+            This was claimed to be using fixed scale computation while
+	    in some case the scale was dynamical
+            To have full flexibility we introduced two additional
+	    (hidden) parameter: "fixed_fac_scale1" and "fixed_fac_scale2"
+	    that allow to choose fixed scale for only one beam.
       OM: fix auto-width that was not following	run_mode specification
       OM: fixing missing rwgt_info for reweighting with gridpack mode
       OM: fixing 'check' command with the skip_event mode
@@ -96,6 +491,49 @@ Update notes for MadGraph5_aMC@NLO (in reverse time order)
       OM: Fix an issue for non positive definite matrix-element when using the
           "set group_subprocesses False"  mode of MG5aMc
       OM: Fix a speed issue for gridpack in readonly mode where the grid were recomputed 
+
+
+
+                        ** PARRALEL VERSION FOR EW branch **
+
+3.0.3 (06/07/20)
+     include up to 2.7.3
+
+3.0.2
+     include up to 2.7.2
+     MZ: better handling of zeros in color-linked borns 
+     RF: improved the behaviour for integration channels that give zero cross section
+     RF: Rewritten the mint integrator package. Makes for easier extensions.
+     RF: Fixed a problem related to the multi-channel enhancement factor for
+         NLO runs that only appeared in BSM theories (or EFTs)
+     RF: In the virt-tricks, replaced the grids for the virtuals with a
+         polynomial fit, which is more precise and allows for a reduction of
+         the number of calls to the virtual. However, requires to save all the
+         phase-space points for which the virtual has been computed to disk,
+         hence requires more disk space and memory for highly-accurate
+         runs. Can be disabled in the FKS_params.dat card, if disk space
+         and/or memory use needs to be limited.
+
+3.0.1 
+     include up to 2.6.4
+     MZ: Enable shower for QCD-only splittings
+     RF: Fixed a major bug in the code that affected 3.0.0 that affected processes with
+         cuts and --to a lesser extend-- processes with massive final state particles:
+	 the phase-space region where "xi_i_fks != xinorm*xi_i_hat" had the wrong "prefact".
+
+3.0.0 (01/05/18):
+     RF+SF+VH+DP+HS+MZ: Allow for the computation of NLO EW corrections (and more subleading NLO corrections).
+         [Note: when requiring NLO corrections ([QCD], [QED] or [QCD QED]), internally the code always treats this [QCD QED],
+	 and then uses the coupling orders to specify which contributions should be considered. Among other things, this means
+	 that when doing QCD corrections only --contrary to previous versions-- also loop diagrams with non-QCD-charged 
+	 particles will be included (e.g., the pentagons in Higgs production via vector-boson fusion).]
+     HS: inclusion of SMWidth for fast evaluation of NLO accurate widths for all SM particles
+     RF+SF: Resonance-aware phase-space mapping for NLO computations 
+     RF: Reduction of the number of jobs -- results in earlier detection of small integration channels for fNLO
+     OM: remove ./bin/mg5 executable
+
+                             ** Main Branch (version 2.x) Update **
+
 
 2.9.3(25/03/21)
       OM: Fix an issue with t-channel particles for massive initial state where sqrt(S)
@@ -111,8 +549,9 @@ Update notes for MadGraph5_aMC@NLO (in reverse time order)
         The generation of tau was not taking into account the information.
       OM: fix an issue when running with python3 where the normalization of pythia8 file were wrong
           when pythia8 was run in parralel.
+      OM: fixing more issue  related to MSSM (introduced within 2.9.0)
+      OM: fixing issue with loop-induced processus (introduced within 2.9.0)
       OM: Fix some wrong scale variation at NLO+PS (introduced in 2.9.0)
-      OM: Fix loop-induced which was not working anymore
       OM: Fix an issue with the installation of pythia-pgs
       
 
@@ -179,7 +618,7 @@ Update notes for MadGraph5_aMC@NLO (in reverse time order)
       OM: Change user interface related to FxFx mode
           - If you have multiple multiplicities at NLO,
 	    - the default run_card is modified accordingly
-	        - has icckw=3 and follow the official FxFx recomendation (i.e. for
+	        - has ickkw=3 and follow the official FxFx recomendation (i.e. for
 		  scale and jet algo)
             - the shower card has two parameter that are dynamically set 
                 - njmax (default: -1) is automatically set depending of the process definition
@@ -258,7 +697,7 @@ Update notes for MadGraph5_aMC@NLO (in reverse time order)
 
 
                              ** Main Branch  Update **
-			
+
 2.7.3(21/06/20)
       OM: Fixing some bug for read-only LO gridpacks (wrong cross-section and shape when generating events).
           Thanks to Congqiao Li for this
@@ -278,11 +717,12 @@ Update notes for MadGraph5_aMC@NLO (in reverse time order)
       OM: For Mac only, when running in script mode, MG5aMC will now prevent the computer to go to idle sleep.
           You can prevent this by running with the '-s' option. like ./bin/mg5_aMC -s PATH_TO_CMD
 
+
 2.7.2(17/03/20)
       OM: Fix a Bug in pythia8 running on Ubuntu 18.04.4 machine
       OM: Speed up standalone_cpp code by changing compilation flag
 
-2.7.1(09/03/20)
+2.7.1.2(09/03/20)
       OM: Fixing issue (wrong cross-section and differential cross-section) for
           polarised sample when
 	   1) you have identical polarised particles

@@ -7,8 +7,8 @@ C     Visit launchpad.net/madgraph5 and amcatnlo.web.cern.ch
 C     
 C     Interface between MG5 and TIR.
 C     
-C     Process: d~ u > w+ QED<=1 WEIGHTED<=2 [ all = QCD ]
-C     Process: s~ c > w+ QED<=1 WEIGHTED<=2 [ all = QCD ]
+C     Process: d~ u > w+ [ all = QCD QED ] QCD^2<=2 QED^2<=2
+C     Process: s~ c > w+ [ all = QCD QED ] QCD^2<=2 QED^2<=2
 C     
 C     
 C     CONSTANTS 
@@ -64,6 +64,7 @@ C
 C     GLOBAL VARIABLES
 C     
       INCLUDE 'MadLoopParams.inc'
+
       INCLUDE 'coupl.inc'
       INTEGER CTMODE
       REAL*8 LSCALE
@@ -176,19 +177,8 @@ C     CONVERT TO MADLOOP CONVENTION
       CALL CONVERT_IREGI_COEFFS(RANK,PJCOEFS,TIRCOEFS)
       CASE(7)
 C     COLLIER
-      CALL COLLIERLOOP(CTMODE,NLOOPLINE,RANK,PL,PDEN,M2L,TIRCOEFS
-     $ ,TIRCOEFSERRORS)
-C     Shift the TIR coefficients by the corresponding COLLIER error if
-C      in CTMODE 2.
-      IF (COLLIERUSEINTERNALSTABILITYTEST.AND.CTMODE.EQ.2) THEN
-C       We add here the numerical inaccuracies linearly to be
-C        conservative 
-        DO I=1,3
-          DO J=0,NLOOPCOEFS-1
-            TIRCOEFS(J,I)=TIRCOEFS(J,I)+TIRCOEFSERRORS(J,I)
-          ENDDO
-        ENDDO
-      ENDIF
+      WRITE(*,*) 'ERROR:: COLLIER is not interfaced.'
+      STOP
       END SELECT
       DO I=1,3
         RES(I)=(0.0D0,0.0D0)

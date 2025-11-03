@@ -1,4 +1,4 @@
-################################################################################
+#############################################################################
 #
 # Copyright (c) 2009 The MadGraph5_aMC@NLO Development team and Contributors
 #
@@ -17,6 +17,7 @@
 from __future__ import absolute_import
 import collections
 import fractions
+import inspect
 import logging
 import math
 import os
@@ -39,7 +40,8 @@ import madgraph.iolibs.ufo_expression_parsers as parsers
 import aloha
 import aloha.create_aloha as create_aloha
 import aloha.aloha_fct as aloha_fct
-
+import aloha.aloha_object as aloha_object
+import aloha.aloha_lib as aloha_lib
 import models as ufomodels
 import models.model_reader as model_reader
 import six
@@ -105,7 +107,7 @@ def get_model_db():
     """return the file with the online model database"""
 
     data_path = ['http://madgraph.phys.ucl.ac.be/models_db.dat',
-                     'https://madgraph.mi.infn.it//models_db.dat']
+                     'http://madgraph.mi.infn.it//models_db.dat']
     import random
     import six.moves.urllib.request, six.moves.urllib.parse, six.moves.urllib.error
     r = random.randint(0,1)
@@ -120,7 +122,8 @@ def get_model_db():
         cluster_path = data_path[index]
         try:
             data = six.moves.urllib.request.urlopen(cluster_path)
-        except Exception:
+        except Exception as err:
+            misc.sprint(err)
             continue
         if data.getcode() != 200:
             continue
@@ -160,7 +163,6 @@ def import_model_from_db(model_name, local_dir=False):
             import pwd
             username =pwd.getpwuid( os.getuid() )[ 0 ]  
         except Exception as error:
-            misc.sprint(str(error))
             username = ''
     if username in ['omatt', 'mattelaer', 'olivier', 'omattelaer'] and target is None and \
                                     'PYTHONPATH' in os.environ and not local_dir:
@@ -350,9 +352,12 @@ def import_full_model(model_path, decay=False, prefix=''):
                 raise UFOImportError("%s directory is not a valid UFO model: \n %s is missing" % \
                                                          (model_path, filename))
         files_list.append(filepath)
+    files_list.append(__file__) # include models/import_ufo.py itself, see mg5amcnlo/mg5amcnlo#89
     # use pickle files if defined and up-to-date
-    if aloha.unitary_gauge: 
+    if aloha.unitary_gauge == 1: 
         pickle_name = 'model.pkl'
+    elif aloha.unitary_gauge == 3:
+        pickle_name = 'model_FDG.pkl'
     else:
         pickle_name = 'model_Feynman.pkl'
     if decay:
@@ -486,6 +491,8 @@ class UFOMG5Converter(object):
         self.interactions = base_objects.InteractionList()
         self.non_qcd_gluon_emission = 0 # vertex where a gluon is emitted withou QCD interaction
                                   # only trigger if all particles are of QCD type (not h>gg)
+        self.colored_scalar = False # in presence of color scalar particle the running of a_s is modified
+                                    # This is not supported by madevent/systematics
         self.wavefunction_CT_couplings = []
  
         # Check here if we can extract the couplings perturbed in this model
@@ -511,6 +518,9 @@ class UFOMG5Converter(object):
         self.ufomodel = model
         self.checked_lor = set()
 
+        if hasattr(self.ufomodel, 'all_running_elements'):
+            self.model.set('running_elements', self.ufomodel.all_running_elements)
+        
         if auto:
             self.load_model()
 
@@ -560,6 +570,11 @@ class UFOMG5Converter(object):
         for particle_info in self.ufomodel.all_particles:            
             self.add_particle(particle_info)
 
+        if self.colored_scalar:
+            logger.critical("Model with scalar colored particles. The running of alpha_s does not support such model.\n" + \
+                             "You can ONLY run at fix scale")
+            self.model['limitations'].append('fix_scale')
+
         # Find which particles is in the 3/3bar color states (retrun {id: 3/-3})
         color_info = self.find_color_anti_color_rep()
 
@@ -587,6 +602,10 @@ class UFOMG5Converter(object):
         for interaction_info in self.ufomodel.all_vertices:
             self.add_interaction(interaction_info, color_info)
 
+        if aloha.unitary_gauge == 3:
+            self.merge_all_goldstone_with_vector()
+
+    
         if self.non_qcd_gluon_emission:
             logger.critical("Model with non QCD emission of gluon (found %i of those).\n  This type of model is not fully supported within MG5aMC.\n"+\
             "  Restriction on LO dynamical scale and MLM matching/merging can occur for some processes.\n"+\
@@ -657,6 +676,8 @@ class UFOMG5Converter(object):
         #clean memory
         del self.checked_lor
 
+        self.check_model_all()
+
         return self.model
     
     def optimise_interaction(self, interaction):
@@ -684,9 +705,6 @@ class UFOMG5Converter(object):
                 del interaction['couplings'][key]
                 
         
-                
-
-        
         # we want to check if the same coupling is used for two lorentz strucutre 
         # for the same color structure. 
         to_lor = {}
@@ -696,7 +714,7 @@ class UFOMG5Converter(object):
                 to_lor[key].append(lor)
             else:
                 to_lor[key] = [lor]
-                
+
         nb_reduce = []
         optimize = False
         for key in to_lor:
@@ -718,6 +736,13 @@ class UFOMG5Converter(object):
         for key in to_lor:
             if len(to_lor[key]) == 1:
                 continue
+            def get_spin(l):
+                return self.lorentz_info[interaction['lorentz'][l]].get('spins')
+                
+            if any(get_spin(l1) != get_spin(to_lor[key][0]) for l1 in to_lor[key]):
+                logger.warning('not all same spins for a given interactions')
+                continue 
+
             names = [interaction['lorentz'][i] for i in to_lor[key]]
             names.sort()
             if self.lorentz_info[names[0]].get('structure') == 'external':
@@ -745,6 +770,417 @@ class UFOMG5Converter(object):
             interaction['couplings'][(color, new_l)] = coup  
                 
     
+    def merge_all_goldstone_with_vector(self):
+        """For Feynman Diagram gauge need to merge interaction of scalar/boson"""
+
+        # Here identify the pair and then delegates to another function
+        # This routine also removes the goldstone from the list of particles of the model
+        for particle in self.particles[:]:
+            if particle.get('type') == 'goldstone':
+                self.particles.remove(particle)
+                vector = [p for p in self.particles if p.get('mass') == particle.get('mass') and p.get('spin') == 3]
+                if len(vector) != 1:
+                    raise Exception("Failed to idendity goldstone/boson relation")
+                
+                self.merge_goldstone_with_vector(particle, vector[0])
+                if not particle.get('self_antipart') and particle.get('is_part'):
+                    particle = copy.copy(particle)
+                    particle.set('is_part', False)
+                    vector = copy.copy(vector[0])
+                    vector.set('is_part', False)
+                    self.merge_goldstone_with_vector(particle, vector)
+
+    def merge_goldstone_with_vector(self, goldstone, vector):
+        """For Feynman Diagram gauge need to merge interaction of scalar/boson
+           In this routine we identify the interactions that needs to be merge into a single one.
+           And delegate the actual merging to another routine
+        """
+
+                    
+                    
+        
+        g_name = goldstone.get_name()
+        v_name = vector.get_name()
+
+        goldstone_interactions = [vertex for vertex in self.interactions if goldstone in  vertex.get('particles')]
+        vector_interactions = [vertex for vertex in self.interactions 
+                               if vector in vertex.get('particles') and
+                               goldstone not in vertex.get('particles')]
+
+        # create an easy way (dict) to find the equivalent vertex with boson
+        search_int = {}
+        for vertex in vector_interactions:
+            names = tuple(sorted([p.get_name() for p in vertex.get('particles')]))
+            if names in search_int:
+                search_int[names].append(vertex)
+            else:
+                search_int[names] = [vertex]
+
+
+        # now loop over goldstone interaction, identify if the a vector interactions
+        # does exists and act accordingly (call dedicated routine)
+        for vertex in goldstone_interactions:
+            self.interactions.remove(vertex)
+
+            #old_names = tuple(sorted([p.get_name() for p in vertex.get('particles')]))
+            names = tuple(sorted([p.get_name() if p.get_name() != g_name else v_name
+                      for p in vertex.get('particles')]))
+            if names in search_int:
+                new_vertex = self.update_vertex_for_goldstone(search_int[names], vertex, goldstone, vector)
+                if new_vertex:
+                    new_vertex = self.convert_goldstone_to_V(vertex, goldstone, vector)
+                    self.interactions.append(new_vertex)
+                    search_int[names].append(new_vertex)
+            else:
+                new_vertex = self.convert_goldstone_to_V(vertex, goldstone, vector)
+                self.interactions.append(new_vertex)
+                search_int[names] = [new_vertex]
+
+        #raise Exception
+
+
+    def convert_goldstone_to_V(self, vertex, goldstone, vector):
+        """create a new vertex where goldstone are replace by the associated vector"""
+
+        gold_vertex = copy.deepcopy(vertex)
+        nb_vector = 0
+        nb_gold = 0
+        for p in vertex.get('particles'):
+            if p.get_pdg_code() == goldstone.get_pdg_code():
+                nb_gold += 1
+
+        to_print=False
+        if nb_gold != nb_vector:
+            to_print=True
+
+        particles_list = base_objects.ParticleList(vertex.get('particles'))
+        for i, part in enumerate(vertex.get('particles')):
+            if part == goldstone:
+                particles_list[i] = vector
+        vertex.set('particles', particles_list)
+
+        for p in vertex.get('particles'):
+            if p.get_pdg_code() == vector.get_pdg_code():
+                nb_vector += 1
+
+        if nb_vector != nb_gold:
+            mappings = self.get_identical_goldstone_mapping(gold_vertex,vertex,goldstone, vector)
+            for lorentz in list(vertex.get('lorentz')):
+                for mapping in  mappings:
+                    new_lorentz = self.get_symmetric_lorentz(str(lorentz), mapping)
+                    new_lorentz_index = len(vertex.get('lorentz'))
+                    vertex.get('lorentz').append(str(new_lorentz))
+                    for (color, lorentz2), value in list(vertex.get('couplings').items()):
+                        if vertex.get('lorentz')[lorentz2] != lorentz:
+                            continue
+                        vertex.get('couplings')[color, new_lorentz_index] = value            
+            return vertex
+        else:
+            return vertex
+
+    def check_model_all(self):
+        """check that the model is consistent"""
+
+        #check that aS parameters is assigned to sminputs#3
+        self.check_model_aS()
+
+
+    def check_model_aS(self):
+        """check that aS parameters is assigned to sminputs#3"""
+
+        for param in self.ufomodel.all_parameters:
+            if param.name == 'aS':
+                if param.lhablock.upper() != 'SMINPUTS':
+                    raise UFOImportError("aS parameter should be assigned to SMINPUTS#3")
+                if param.lhacode != [3]:
+                    misc.sprint(param.lhacode)
+                    raise UFOImportError("aS parameter should be assigned to SMINPUTS#3")
+                    #logger.warning("aS parameter should be assigned to SMINPUTS#3")
+            elif param.nature == "external" and param.lhablock.upper() == 'SMINPUTS'\
+                  and param.lhacode == [3] \
+                  and param.name.upper() not in ['AS', 'ALPHAS']:
+                raise UFOImportError("SMINPUTS#3 parameter should be aS")
+                #logger.warning("aS parameter should be named aS")
+
+    def reorder_vertex(self, vertex, mapping):
+        """change the order of the particle within a given interaction"""
+
+        new_vertex = copy.deepcopy(vertex)
+        #fix some weird behavior of the copy
+        new_vertex['color'] = list(vertex.get('color'))
+
+        # reorder the particle within the new vertex
+        old_particles = vertex.get('particles')
+        new_particles = old_particles.__class__()
+        for i in range(len(old_particles)):
+            new_particles.append(old_particles[mapping[i]])
+        new_vertex.set('particles', new_particles)
+
+        restricted_mapping = {i:j for i,j in mapping.items() if i!=j}
+
+        # change the lorentz structure within the new vertex
+        all_lor = new_vertex.get('lorentz')
+        for i,lor in enumerate(all_lor):
+            new_lorentz = self.get_symmetric_lorentz(lor, restricted_mapping, change_number=True)
+            all_lor[i] = str(new_lorentz)
+        all_color = new_vertex.get('color')
+        for i, col in enumerate(all_color):
+            new_color = self.get_symmetric_color(str(col), restricted_mapping)
+            if new_color not in  ['1 ','1 1']:
+                if new_color.startswith('1 '):
+                    new_color = new_color[2:]
+                from madgraph.core.color_algebra import T,f,d,Epsilon,EpsilonBar,K6,K6Bar,T6,Tr
+                all_color[i]= color.ColorString([eval(nc) \
+                                    for nc in new_color.split() if nc !='1'])
+        return new_vertex
+
+
+    @staticmethod
+    def get_symmetric_color(old_color, substitution):
+        """ """
+        all_color_flag = ['f','d', 'Epsilon', 'EpsilonBar', 'K6', 'K6Bar', 'T', 'T6', 'Tr' ]
+        split = re.split("(%s)\(([\d,\s\-\+]*)\)" % '|'.join(all_color_flag), old_color)
+        new_expr = ''
+        for i in range(len(split)):
+            if i % 3 == 0:
+                new_expr += split[i]
+            if i % 3 == 1:
+                new_expr += split[i]+'('
+            if i %3 == 2:
+                indices = split[i].split(',')
+                for i, oneindex in enumerate(indices):
+                    if int(oneindex) in substitution: # +1/-1 since not python ordering
+                        indices[i] = str(substitution[int(oneindex)])
+
+                new_expr += ','.join(indices)+')'
+        new_color = old_color.__class__(new_expr)
+        return new_color
+
+
+
+    def get_symmetric_lorentz(self, old_lorentz, substitution, change_number=False):
+        """ """
+        
+        lor_orig = [l for l in self.model['lorentz'] if l.name==old_lorentz][0]
+        FR_name = True 
+        for key in substitution:
+            if old_lorentz[key] not in ['S','V']:
+                FR_name = False
+
+        if not FR_name:
+            raise Exception("need to think how to setup a name in this case. Please report")
+        else:
+            new_name = list(old_lorentz)
+            for old,new in substitution.items():
+                new_name[new] = old_lorentz[old]
+            new_name = ''.join(new_name)
+
+        if change_number:
+            base = new_name[:len(lor_orig.spins)]
+            try:
+                index = int(new_name[len(lor_orig.spins):]) + 1
+            except:
+                base = new_name
+                index = 1
+            if not hasattr(self.model, 'lorentz_name2obj'):
+                self.model.create_lorentz_dict()
+            while str(base)+str(index) in self.model.lorentz_name2obj:
+                index += 1
+            new_name = str(base)+str(index)
+
+        if not hasattr(self, 'all_aloha_obj'):
+            self.all_aloha_obj = [n for n, obj in aloha_object.__dict__.items() 
+                                  if inspect.isclass(obj) and issubclass(obj, aloha_lib.FactoryLorentz)]
+
+        new_spins = list(lor_orig.spins)
+        for old,new in substitution.items():
+                new_spins[new] = lor_orig.spins[old]
+
+        split = re.split("(%s)\(([\d,\s\-\+]*)\)" % '|'.join(self.all_aloha_obj), lor_orig.structure )
+        new_expr = ''
+        for i in range(len(split)):
+            if i % 3 == 0:
+                new_expr += split[i]
+            if i % 3 == 1:
+                new_expr += split[i]+'('
+            if i %3 == 2:
+                indices = split[i].split(',')
+                for i, oneindex in enumerate(indices):
+                    if int(oneindex)-1 in substitution: # +1/-1 since not python ordering
+                        indices[i] = str(substitution[int(oneindex)-1]+1)
+
+                new_expr += ','.join(indices)+')'
+        
+        new_formfact = lor_orig.formfactors if hasattr(lor_orig, 'formfactors') else None
+
+        if change_number:
+            #need to check that the new structure does not exists yet
+            all_prev_expr = [(l.structure,l.spins) for l in self.model.get('lorentz')]
+            if (new_expr,new_spins) in all_prev_expr:
+                return self.model.get('lorentz')[all_prev_expr.index((new_expr,new_spins))]
+            else:
+                new_lor = self.add_lorentz(new_name, new_spins, new_expr, formfact=new_formfact)
+        else:
+            try:
+                new_lor = self.add_lorentz(new_name, new_spins, new_expr, formfact=new_formfact)
+            except AssertionError:
+                prev_def = [l for l in self.model['lorentz'] if l.name==new_name][0]
+                if prev_def.structure != new_expr:
+                    misc.sprint("WARNING, two different definition for one lorentz name", prev_def.structure, new_expr)
+                new_lor = prev_def
+        return new_lor
+
+
+    
+    def update_vertex_for_goldstone(self, vertex, gold_vertex, goldstone, vector):
+        """put the content of the gold_vertex within the vertex.
+           So far we do assume that ordering is preserved between interaction
+        """
+
+        if len(vertex) !=1 :
+            for onevertex in vertex:
+                to_be_done = self.update_vertex_for_goldstone([onevertex], gold_vertex, goldstone, vector)
+                if not to_be_done:
+                    return
+            return True
+                
+        vertex = vertex[0]
+
+        nb_vector = 0
+        nb_gold = 0
+        for p in gold_vertex.get('particles'):
+            if p.get_pdg_code() == goldstone.get_pdg_code():
+                nb_gold += 1
+        for p in vertex.get('particles'):
+            if p.get_pdg_code() == vector.get_pdg_code():
+                nb_vector += 1
+
+        # need to check here if the ordering is the same.
+        gold_pdg = [p.get_pdg_code() if p.get_pdg_code() != goldstone.get_pdg_code() else vector.get_pdg_code()
+                    for p in gold_vertex.get('particles')]
+        vert_pdg = [p.get_pdg_code() for p in vertex.get('particles')]
+
+        # check if the order of the particle is the same
+        if gold_pdg != vert_pdg:
+            mapping = {}
+            for orig in range(len(gold_pdg)):
+                if vert_pdg[orig] == gold_pdg[orig]:
+                    mapping[orig] = orig
+                    vert_pdg[orig] = 0
+            for orig in range(len(gold_pdg)):
+                if orig in mapping:
+                    continue
+                new_pos = vert_pdg.index(gold_pdg[orig])
+                mapping[orig] = new_pos
+                vert_pdg[new_pos] = 0
+
+            gold_vertex = self.reorder_vertex(gold_vertex, mapping)
+
+        # check how to translate the color:
+        # the translate_color track the index of the color in gold_vertex (key)
+        # and the value is associate to the identical color in vertex. 
+        # If that color does not exists it is added to the mix (should never happen. I guess)
+        translate_color = {}
+        for i, color in enumerate(gold_vertex.get('color')):
+            if color in vertex.get('color'):
+                translate_color[i] = vertex.get('color').index(color)
+            else:
+                misc.sprint("why a new color appear?", color, vertex.get('color'))
+                raise Exception
+                translate_color[i] = len(vertex.get('color'))
+                vertex.get('color').append(color)
+        
+        # check now the lorentz structure. Some strategy as for the color
+        # But lorentz structure should not repeat in principle...
+        translate_lorentz = {}
+        for i, lor in enumerate(gold_vertex.get('lorentz')):
+            if lor in vertex.get('lorentz'):
+                #raise Exception("lorentz should not repeat. Please report for investigation.")
+                translate_lorentz[i] = vertex.get('lorentz').index(lor)
+            else:
+                translate_lorentz[i] = len(vertex.get('lorentz'))
+                vertex.get('lorentz').append(lor)
+
+        # now we can add the coupling to the original vertex
+        for (color, lorentz), value in gold_vertex.get('couplings').items():
+            key = (translate_color[color], translate_lorentz[lorentz])
+            if key in vertex.get('couplings'):
+                return True # will include it in a new vertex
+            assert key not in vertex.get('couplings')
+            vertex.get('couplings')[key] = value
+
+
+
+        if nb_vector != nb_gold:
+            mappings = self.get_identical_goldstone_mapping(gold_vertex,vertex,goldstone, vector)
+            for mapping in mappings:
+                color_map = {}
+                for i, col in enumerate(gold_vertex.get('color')):
+                    new_col = self.get_symmetric_color(str(col), mapping)
+                    if new_col not in  ['1 ', '1 1']:
+                        new_col = ColorString([eval(nc) for nc in new_col.split() if nc !='1'])
+                    else:
+                        color_map[i]=i
+                        continue 
+                    if new_col in vertex.get('color'):
+                        new_col_index = vertex.get('color').index(new_col)
+                    else:
+                        new_col_index = len( vertex.get('color'))
+                        vertex.get('color').append(new_col)
+                    color_map[i] = new_col_index
+
+                for lorentz in list(gold_vertex.get('lorentz')):
+                    new_lorentz = self.get_symmetric_lorentz(lorentz, mapping)
+                    new_lorentz_index = len(vertex.get('lorentz'))
+                    if new_lorentz in vertex.get('lorentz'):
+                        misc.sprint(lorentz)
+                        misc.sprint(new_lorentz)
+                        misc.sprint(vertex)
+                        raise Exception("lorentz structure already in the vertex")
+                    vertex.get('lorentz').append(str(new_lorentz))
+                    for (color, lorentz2), value in list(vertex.get('couplings').items()):
+                        if vertex.get('lorentz')[lorentz2] != lorentz:
+                            continue
+                        vertex.get('couplings')[color_map[color],new_lorentz_index] = value        
+
+    def get_identical_goldstone_mapping(self, gold_vertex, v_vertex, goldstone, vector):
+        """generate a mapping of the various possible assignment.
+           This is called only if the number of particle does not match (so no need to check)
+        """
+
+        #input_pos=[i for i,p in enumerate(gold_vertex.get('particles')) if p.get_pdg_code() == goldstone.get_pdg_code()]
+        final_pos=[i for i,p in enumerate(v_vertex.get('particles')) if p.get_pdg_code() == vector.get_pdg_code()]  
+        pdgs = [p.get_pdg_code() for p in gold_vertex.get('particles')]
+        valid = []
+        for candidate in set(itertools.permutations(pdgs)):
+            for i, pdg in enumerate(candidate):
+                if i not in final_pos:
+                    if pdg != pdgs[i]:
+                        break
+            else:
+                valid.append(candidate) 
+        # now that we have all the valid permutation, convert that to a dictionary of mappings
+        # drop the identity permutation
+        mappings = []
+        for v in valid:
+            if tuple(v) == tuple(pdgs):
+                continue
+            input_pos=[i for i,p in enumerate(gold_vertex.get('particles')) if p.get_pdg_code() == goldstone.get_pdg_code()]
+            new_pos = [i for i in range(len(v)) if v[i] == goldstone.get_pdg_code()]
+            mydict = {}#{i:i for i in range(len(v))}
+            #check if they are overlap between input_pos and new_pos
+            for i in input_pos:
+                if i in new_pos:
+                    input_pos.remove(i)
+                    new_pos.remove(i)
+            # now that identity is correctly handle, takes permutation of particle to the mapping
+            for i in range(len(v)):
+                if i in input_pos:
+                    mydict[i] = new_pos.pop()
+                    mydict[mydict[i]] = i
+            mappings.append(mydict)
+        return mappings
+
     def add_merge_lorentz(self, names):
         """add a lorentz structure which is the sume of the list given above"""
         
@@ -803,14 +1239,17 @@ class UFOMG5Converter(object):
         if not self.perturbation_couplings and particle_info.spin < 0:
             return
         
-        if (aloha.unitary_gauge and 0 in self.model['gauge']) \
+        if (aloha.unitary_gauge in [1,2] and 0 in self.model['gauge']) \
                             or (1 not in self.model['gauge']): 
         
             # MG5 doesn't use goldstone boson 
             if hasattr(particle_info, 'GoldstoneBoson') and particle_info.GoldstoneBoson:
                 return
+            if hasattr(particle_info, 'goldstoneboson') and particle_info.goldstoneboson:
+                return
             elif hasattr(particle_info, 'goldstone') and particle_info.goldstone:
-                return      
+                return
+                  
         # Initialize a particles
         particle = base_objects.Particle()
 
@@ -884,6 +1323,12 @@ class UFOMG5Converter(object):
                     particle.set('propagator', 0)
                
         assert(10 == nb_property) #basic check that all the information is there         
+
+        #check if we have scalar colored particle in the model -> issue with the running of alpha_s
+        if particle['spin'] == 1 and particle['color'] != 1:
+            if particle['type'] != 'ghost' and particle.get('mass').lower() == 'zero':
+                self.colored_scalar = True
+
         
         # Identify self conjugate particles
         if particle_info.name == particle_info.antiname:
@@ -968,8 +1413,8 @@ class UFOMG5Converter(object):
                                                            for pole in range(3)]
             CTparameter_patterns[CTparam.name] = (pattern_finder,sub_functions)
         
-        times_zero = re.compile('\*\s*-?ZERO')
-        zero_times = re.compile('ZERO\s*(\*|\/)')
+        times_zero = re.compile(r'\*\s*-?ZERO')
+        zero_times = re.compile(r'ZERO\s*(\*|\/)')
         def is_expr_zero(expresson):
             """ Checks whether a single term (involving only the operations
             * or / is zero. """
@@ -1026,7 +1471,7 @@ class UFOMG5Converter(object):
                   the value of the pole. In the current implementation, this is
                   just to see if the pole is zero or not.
             """
-
+            
             if isinstance(CTCoupling.value,dict):
                 if -pole in list(CTCoupling.value.keys()):
                     return CTCoupling.value[-pole], [], 0
@@ -1086,7 +1531,9 @@ class UFOMG5Converter(object):
                     # attribute defined, but it is better to make sure.
                     if hasattr(self.model, 'map_CTcoup_CTparam'):
                         self.model.map_CTcoup_CTparam[couplname] = CTparamNames
+            
 
+                    
             # Finally modify the value of this CTCoupling so that it is no
             # longer a string expression in terms of CTParameters but rather
             # a dictionary with the CTparameters replaced by their _FIN_ and
@@ -1097,6 +1544,13 @@ class UFOMG5Converter(object):
             if new_value:
                 coupl.old_value = coupl.value
                 coupl.value = new_value
+
+        for CTparam in all_CTparameters:
+            if CTparam.name not in self.model.map_CTcoup_CTparam:
+                if not hasattr(self.model, "notused_ct_params"):
+                    self.model.notused_ct_params = [CTparam.name.lower()]
+                else:
+                    self.model.notused_ct_params.append(CTparam.name.lower())
 
     def add_CTinteraction(self, interaction, color_info):
         """ Split this interaction in order to call add_interaction for
@@ -1492,7 +1946,6 @@ class UFOMG5Converter(object):
         #original = copy.copy(data_string)
         #data_string = p.sub('color.T(\g<first>,\g<second>)', data_string)
         
-        
         output = []
         factor = 1
         for term in data_string.split('*'):
@@ -1524,11 +1977,11 @@ class UFOMG5Converter(object):
                 
                 
                 if particle.color == 6:
-                    output.append(self._pat_id.sub('color.T6(\g<first>,\g<second>)', term))
+                    output.append(self._pat_id.sub(r'color.T6(\g<first>,\g<second>)', term))
                 elif particle.color == -6 :
-                    output.append(self._pat_id.sub('color.T6(\g<second>,\g<first>)', term))
+                    output.append(self._pat_id.sub(r'color.T6(\g<second>,\g<first>)', term))
                 elif particle.color == 8:
-                    output.append(self._pat_id.sub('color.Tr(\g<first>,\g<second>)', term))
+                    output.append(self._pat_id.sub(r'color.Tr(\g<first>,\g<second>)', term))
                     factor *= 2
                 elif particle.color in [-3,3]:
                     if particle.pdg_code not in color_info:
@@ -1551,9 +2004,9 @@ class UFOMG5Converter(object):
                             logger.debug('succeed')
                 
                     if color_info[particle.pdg_code] == 3 :
-                        output.append(self._pat_id.sub('color.T(\g<second>,\g<first>)', term))
+                        output.append(self._pat_id.sub(r'color.T(\g<second>,\g<first>)', term))
                     elif color_info[particle.pdg_code] == -3:
-                        output.append(self._pat_id.sub('color.T(\g<first>,\g<second>)', term))
+                        output.append(self._pat_id.sub(r'color.T(\g<first>,\g<second>)', term))
                 else:
                     raise MadGraph5Error("Unknown use of Identity for particle with color %d" \
                           % particle.color)
@@ -1563,7 +2016,7 @@ class UFOMG5Converter(object):
 
         # Change convention for summed indices
         p = re.compile(r'\'\w(?P<number>\d+)\'')
-        data_string = p.sub('-\g<number>', data_string)
+        data_string = p.sub(r'-\g<number>', data_string)
          
         # Shift indices by -1
         new_indices = {}
@@ -1612,6 +2065,16 @@ class OrganizeModelExpression:
         self.params = {}     # depend on -> ModelVariable
         self.couplings = {}  # depend on -> ModelVariable
         self.all_expr = {} # variable_name -> ModelVariable
+        
+        if hasattr(self.model, 'all_running_elements'):
+            all_elements = set()
+            for runs in self.model.all_running_elements:
+                for line_run in runs.run_objects:
+                    for one_element in line_run:
+                        all_elements.add(one_element.name)
+            all_elements.union(self.track_dependant)
+            self.track_dependant = list(all_elements)
+        
     
     def main(self, additional_couplings = []):
         """Launch the actual computation and return the associate 
@@ -1672,21 +2135,33 @@ class OrganizeModelExpression:
         # if not, take Gf as the track_dependant variable
         present_aEWM1 = any(param.name == 'aEWM1' for param in
                         self.model.all_parameters if param.nature == 'external')
-
+   
         if not present_aEWM1:
-            self.track_dependant = ['aS','Gf','MU_R']
+            self.track_dependant += ['Gf']
+            self.track_dependant = list(set(self.track_dependant))
+        p = self.model.all_parameters[0]
+
+        mu_eff = list(set([param.name for param in self.model.all_parameters 
+                    if (param.nature == 'external' and
+                        param.lhablock.lower() == 'loop' and
+                        param.name != 'MU_R'
+                        )]))
+        self.track_dependant += mu_eff
+
 
         for param in self.model.all_parameters+additional_params:
             if param.nature == 'external':
                 parameter = base_objects.ParamCardVariable(param.name, param.value, \
-                                               param.lhablock, param.lhacode)
+                                               param.lhablock, param.lhacode, 
+                                               param.scale if hasattr(param,'scale') else None)
                 
             else:
                 expr = self.shorten_expr(param.value)
                 depend_on = self.find_dependencies(expr)
                 parameter = base_objects.ModelVariable(param.name, expr, param.type, depend_on)
             
-            self.add_parameter(parameter)     
+            self.add_parameter(parameter)  
+           
             
     def add_parameter(self, parameter):
         """ add consistently the parameter in params and all_expr.
@@ -1753,11 +2228,19 @@ class OrganizeModelExpression:
             depend_on = self.find_dependencies(expr)
             parameter = base_objects.ModelVariable(coupling.name, expr, 'complex', depend_on)
             # Add consistently in the couplings/all_expr
+            if 'aS' in depend_on and 'QCD' not in coupling.order:
+                logger.warning('coupling %s=%s has direct dependence in aS but has QCD order set to 0. Automatic computation of scale uncertainty can be wrong for such model.',
+                               coupling.name, coupling.value)
             try:
                 self.couplings[depend_on].append(parameter)
             except KeyError:
                 self.couplings[depend_on] = [parameter]
-            self.all_expr[coupling.value] = parameter                
+            if coupling.value not in self.all_expr:
+                # the if statement is only to prevent overwritting definition in all_expr
+                # when a coupling is equal to a single parameter
+                # note that coupling are always mapped to complex, while parameter can be real.
+                self.all_expr[coupling.value] = parameter 
+        
 
     def find_dependencies(self, expr):
         """check if an expression should be evaluated points by points or not
@@ -1770,6 +2253,7 @@ class OrganizeModelExpression:
         
         # Split the different part of the expression in order to say if a 
         #subexpression is dependent of one of tracked variable
+        sexpr = str(expr)
         expr = self.separator.split(expr)
         # look for each subexpression
         for subexpr in expr:
@@ -1779,6 +2263,7 @@ class OrganizeModelExpression:
             elif subexpr in self.all_expr and self.all_expr[subexpr].depend:
                 [depend_on.add(value) for value in self.all_expr[subexpr].depend 
                                 if  self.all_expr[subexpr].depend != ('external',)]
+
         if depend_on:
             return tuple(depend_on)
         else:
@@ -2000,7 +2485,13 @@ class RestrictModel(model_reader.ModelReader):
             self.get('order_hierarchy')
             self.get('expansion_order')
 
-
+        if os.path.exists(param_card.replace('restrict', 'param')):
+            path = param_card.replace('restrict', 'param')
+            logger.info('default value set as in file %s' % path)
+            self.set_parameters_and_couplings(path,
+                                              complex_mass_scheme=complex_mass_scheme,
+                                              auto_width=self.modify_autowidth)
+                          
 
         
     def locate_coupling(self):
@@ -2041,6 +2532,17 @@ class RestrictModel(model_reader.ModelReader):
         keys.sort()
         for name in keys:
             value = self['coupling_dict'][name]
+
+            def limit_to_6_digit(a):
+                x = a.real
+                if x != 0:
+                    x = round(x, int(abs(round(math.log(abs(x), 10),0))+10))
+                y = a.imag
+                if y !=0:
+                    y = round(y, int(abs(round(math.log(abs(y), 10),0))+10))
+                return complex(x,y)
+            
+
             if value == 0:
                 zero_coupling.append(name)
                 continue
@@ -2052,7 +2554,8 @@ class RestrictModel(model_reader.ModelReader):
             elif not strict_zero and abs(value) < 1e-10:
                 return self.detect_identical_couplings(strict_zero=True)
 
-            
+            value = limit_to_6_digit(value)
+
             if value in dict_value_coupling or -1*value in dict_value_coupling:
                 if value in dict_value_coupling:
                     iden_key.add(value)
@@ -2116,6 +2619,24 @@ class RestrictModel(model_reader.ModelReader):
                 null_parameters.append(name)
             elif value == 1:
                 one_parameters.append(name)
+
+        # check if the model is a running model with running.py and 
+        # check that the model is compatible with the restriction
+        running_param = self.get_running() 
+        if running_param:
+            tocheck = null_parameters+one_parameters
+            for p in  tocheck:
+                for block in running_param:
+                    block = ['mdl_%s' % c for c in block]
+                    if p in block:
+                        if any((p2 not in tocheck for p2 in block)):
+                            not_restricted = [p2 for p2 in block if p2 not in tocheck]
+                            raise Exception("Model restriction not compatible with the running of some parameters. \n %s is restricted to zero/one but mix with %s which is/are not."
+                                            %(p, not_restricted))
+                        else:
+                            continue # go to the next block
+
+
 
         return null_parameters, one_parameters
     
@@ -2261,6 +2782,7 @@ class RestrictModel(model_reader.ModelReader):
         logger_mod.log(self.log_level, ' Fuse the Following coupling (they have the same value): %s '% \
                         ', '.join([str(obj) for obj in couplings]))
 
+        #names = [name for (name,ratio) in couplings if ratio ==1]
         main = couplings[0][0]
         assert couplings[0][1] == 1
         self.del_coup += [c[0] for c in couplings[1:]] # add the other coupl to the suppress list
@@ -2422,6 +2944,26 @@ class RestrictModel(model_reader.ModelReader):
                                  ' with loop particles (%s)'%loop_parts+\
                                  ' perturbing order %s'%order)  
 
+        # looping over all vertex and remove all link to lorentz structure that are not used anymore
+        for vertex in mod_vertex:
+            lorentz_used = set()
+            for key in vertex['couplings']:
+                lorentz_used.add(key[1])
+            if not lorentz_used:
+                continue
+            lorentz_used = list(lorentz_used)
+            lorentz_used.sort()
+            map = {j:i for i,j in enumerate(lorentz_used)}            
+            new_lorentz = [l for i,l in enumerate(vertex['lorentz']) if i in lorentz_used]
+            new_coup = {}
+            for key in vertex['couplings']:
+                new_key = list(key)
+                new_key[1] = map[new_key[1]]
+                new_coup[tuple(new_key)] = vertex['couplings'][key]
+            vertex['lorentz'] = new_lorentz
+            vertex['couplings'] = new_coup                    
+
+
         return
                 
     def remove_couplings(self, couplings):               
@@ -2526,6 +3068,9 @@ class RestrictModel(model_reader.ModelReader):
                         for use in  re_pat.findall(parameter.expr):
                             used.add(use)
                         
+        if madgraph.ordering:
+            used = sorted(used)
+            
         # modify the object for those which are still used
         for param in used:
             if not param:
@@ -2582,9 +3127,19 @@ class RestrictModel(model_reader.ModelReader):
                 self.defined_lorentz_expr[lor.get('structure')] = lor.get('name')
                 self.lorentz_info[lor.get('name')] = lor #(lor.get('structure'), lor.get('spins'))
             
+
+
         for key in to_lor:
             if len(to_lor[key]) == 1:
                 continue
+
+            def get_spin(l):
+                return self.lorentz_info[interaction['lorentz'][l]].get('spins')
+
+            if any(get_spin(l1[0]) != get_spin(to_lor[key][0][0]) for l1 in to_lor[key]):
+                logger.warning('not all same spins for a given interactions')
+                continue 
+
             names = ['u%s' % interaction['lorentz'][i[0]] if i[1] ==1 else \
                      'd%s' % interaction['lorentz'][i[0]] for i in to_lor[key]]
 
@@ -2628,6 +3183,7 @@ class RestrictModel(model_reader.ModelReader):
                 break
         else:
             base_name = 'LMER'
+
         i = 1
         while '%s%s' %(base_name, i) in self.lorentz_info:
             i +=1

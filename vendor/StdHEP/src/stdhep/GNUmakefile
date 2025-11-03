@@ -8,7 +8,7 @@ STDHEP_DIR = ../..
 #this has been added by MZ
 FFLAGS+= -fd-lines-as-code -fPIE
 FFLAGS += -std=legacy
-CFLAGS += -Wno-implicit-function-declaration
+CFLAGS += -Wno-implicit-function-declaration -Wno-incompatible-pointer-types
 
 SLIB = $(STDHEP_DIR)/lib
 SBIN = $(STDHEP_DIR)/bin
@@ -17,13 +17,13 @@ SINC = $(STDHEP_DIR)/src/inc
 INCS = -I$(SINC) -I$(STDHEP_DIR)/mcfio/src \
        -I$(SINC)/isajet -I$(SINC)/pythia -I$(SINC)/herwig \
        -I$(SINC)/qq -I$(SINC)/dpm
-CFLAGS += -I$(SINC) -I$(STDHEP_DIR)/mcfio/src
+CFLAGS += -I$(SINC) -I$(STDHEP_DIR)/mcfio/src -I/usr/include/tirpc
 CPPFLGS = $(KPPFLAGS) $(INCS)
 
 FOBJS =	$(patsubst %.F,%$(SFX).o,$(wildcard *.F))
 COBJS =	$(patsubst %.c,%$(SFX).o,$(wildcard *.c))
 XDROBJS = $(patsubst %.c,%$(SFX).o,$(wildcard mcf*.c))
-UOBJS = copy_stdevent$(SFX).o sum_4vec_d$(SFX).o sum_4vec_f$(SFX).o
+UOBJS = sum_4vec_d$(SFX).o sum_4vec_f$(SFX).o
 
 LIBLIST = $(SLIB)/libstdhep$(SFX).a $(SLIB)/libstdhepC$(SFX).a
 ifdef BUILD_SHARED

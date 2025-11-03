@@ -15,7 +15,6 @@
 """ Command interface for MadSpin """
 from __future__ import division
 from __future__ import absolute_import
-from __future__ import print_function
 import collections
 import logging
 import math
@@ -81,11 +80,12 @@ class MadSpinOptions(banner.ConfigFile):
         self.add_param('input_format', 'auto', allowed=['auto','lhe', 'hepmc', 'lhe_no_banner'])
         self.add_param('frame_id', 6)
         self.add_param('global_order_coupling', '')
+        self.add_param('identical_particle_in_prod_and_decay', 'average')
         
     ############################################################################
     ##  Special post-processing of the options                                ## 
     ############################################################################
-    def post_set_ms_dir(self, value, change_userdefine, raiseerror):
+    def post_set_ms_dir(self, value, change_userdefine, raiseerror, *opts):
         """ special handling for set ms_dir """
         
         self.__setitem__('curr_dir', value, change_userdefine=change_userdefine)
@@ -99,7 +99,7 @@ class MadSpinOptions(banner.ConfigFile):
             random.mg_seedset = self['seed']  
 
     ############################################################################        
-    def post_set_run_card(self, value, change_userdefine, raiseerror):
+    def post_set_run_card(self, value, change_userdefine, raiseerror, *opts):
         """ special handling for set run_card """
         
         if value == 'default':
@@ -129,6 +129,11 @@ class MadSpinOptions(banner.ConfigFile):
             logger.warning('Fix order madspin fails to have the correct scale information. This can bias the results!')
             logger.warning('Not all functionalities of MadSpin handle this mode correctly (only onshell mode so far).')
 
+    ############################################################################
+    def post_identical_in_prod_and_decay(self, value, change_userdefine, raiseerror):
+        """ special handling for set fixed_order """
+        if value not in ["crash", 'average', 'max', 'first']:
+            raise Exception("value %s not supported for this parameter identical_in_prod_and_decay")
 
 class MadSpinInterface(extended_cmd.Cmd):
     """Basic interface for madspin"""
@@ -626,13 +631,22 @@ class MadSpinInterface(extended_cmd.Cmd):
     
         args = self.split_arg(line)
         self.check_launch(args)
-        for part in self.list_branches.keys():
+        for part in list(self.list_branches.keys()):
             if part in self.mg5cmd._multiparticles:
-            
                 if any(pid in self.final_state for pid in self.mg5cmd._multiparticles[part]):
                     break
             else:
-                pid = self.mg5cmd._curr_model.get('name2pdg')[part]
+                try:
+                    pid = self.mg5cmd._curr_model.get('name2pdg')[part]
+                except KeyError:
+                    pid = self.mg5cmd._curr_model.get('name2pdg')[part.lower()]
+                    self.list_branches[part.lower()] = self.list_branches[part]
+                    del self.list_branches[part]
+                    particle = self.mg5cmd._curr_model.get_particle(pid)
+                    if particle.get('antiname').upper() in self.list_branches:
+                        self.list_branches[particle.get('antiname').lower()] = \
+                            self.list_branches[particle.get('antiname').upper()]
+                        del self.list_branches[particle.get('antiname').upper()]
                 if pid in self.final_state:
                     break
         else:
@@ -936,12 +950,18 @@ class MadSpinInterface(extended_cmd.Cmd):
                     name = part.get_name()
                     if name not in self.list_branches or len(self.list_branches[name]) == 0:
                         continue
-                    raise self.InvalidCmd("The bridge mode of MadSpin does not support event files where events do not *all* share the same set of final state particles to be decayed. One workaround is to force the final cross-section manually.")
+                    #raise self.InvalidCmd("The bridge mode of MadSpin does not support event files where events do not *all* share the same set of final state particles to be decayed. One workaround is to force the final cross-section manually.")
+                    if len(self.list_branches[name]) == 1:
+                        evt_decayfile[pdg] = self.generate_events(pdg, min(nb_event,100000), mg5)
+                    else:
+                        evt_decayfile[pdg] = self.generate_events(pdg, min(nb_needed,100000), mg5, cumul=True)
                     
                      
         # Compute the branching ratio.
         if not self.options['cross_section']:
             br = 1
+            multi_br = [ ]
+            multi_totevt = 0
             for (pdg, event_files) in evt_decayfile.items():
                 if not event_files:
                     continue
@@ -970,7 +990,16 @@ class MadSpinInterface(extended_cmd.Cmd):
                             logger.critical("Branching ratio larger than one for %s " % pdg) 
                         br *= (pwidth / totwidth)**nb_mult
                 else:
-                    raise self.InvalidCmd("The bridge mode of MadSpin does not support event files where events do not *all* share the same set of final state particles to be decayed.")
+                    pwidth = sum([event_files[k].cross for k in event_files])        
+                    multi_br.append(pwidth / totwidth) 
+                    multi_totevt += to_decay[pdg] % nb_event
+            if multi_br and multi_totevt % nb_event == 0:
+                if all(misc.equal(br,multi_br[0], 2) for br in multi_br): 
+                    logger.warning("not all event are decaying the same particle, this is only supported if each event have ONE decaying particle (not checked) and that all particles have the same BR")        
+                else:
+                    raise self.InvalidCmd("The bridge mode of MadSpin does not support event files where events do not *all* share the same set of final state particles to be decayed: [%s %s ] " %(multi_br, multi_totevt))
+            elif multi_br:
+                raise self.InvalidCmd("The bridge mode of MadSpin does not support event files where events do not *all* share the same set of final state particles to be decayed. (%s %s)" % (multi_br, multi_totevt))
         else:
             br = 1
         self.branching_ratio = br
@@ -1716,12 +1745,28 @@ class MadSpinInterface(extended_cmd.Cmd):
             orig_order = self.all_me[tag]['order']
         pdir = self.all_me[tag]['pdir']
         if pdir in self.all_f2py:
-            p = event.get_momenta(orig_order)
-            p = rwgt_interface.ReweightInterface.invert_momenta(p)
-            if event[0].color1 == 599 and event.aqcd==0:
-                return self.all_f2py[pdir](p, 0.113, 0)
+            all_p = event.get_all_momenta(orig_order)
+            if self.options['identical_particle_in_prod_and_decay'] == "crash" and\
+                len(all_p)> 1:
+                raise Exception("Ambiguous particle in production and decay. crash as requested by 'identical_particle_in_prod_and_decay'")
+            out = 0
+            for p in all_p:
+                p = rwgt_interface.ReweightInterface.invert_momenta(p)
+                if event[0].color1 == 599 and event.aqcd==0:
+                    new_value = self.all_f2py[pdir](p, 0.113, 0)
+                else:
+                    new_value = self.all_f2py[pdir](p, event.aqcd, 0)
+                if self.options['identical_particle_in_prod_and_decay'] == "average":
+                    out += new_value
+                else:
+                    if abs(out)< abs(new_value):
+                        out = new_value
+                if self.options['identical_particle_in_prod_and_decay'] == 'first':
+                    return out
+            if self.options['identical_particle_in_prod_and_decay'] == "average":
+                return out/len(all_p)
             else:
-                return self.all_f2py[pdir](p, event.aqcd, 0)
+                return out
         else:
             if sys.path[0] != pjoin(self.path_me, 'madspin_me', 'SubProcesses'):
                 sys.path.insert(0, pjoin(self.path_me, 'madspin_me', 'SubProcesses'))
@@ -1750,7 +1795,7 @@ class MadSpinInterface(extended_cmd.Cmd):
         processes = [line[9:].strip() for line in self.banner.proc_card
                      if line.startswith('generate')]
         processes += [' '.join(line.split()[2:]) for line in self.banner.proc_card
-                      if re.search('^\s*add\s+process', line)]
+                      if re.search(r'^\s*add\s+process', line)]
         # 2. compute the decay matrix-element
         decay_text = []
         processes_decay = []

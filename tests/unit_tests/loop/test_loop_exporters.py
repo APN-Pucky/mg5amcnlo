@@ -203,7 +203,7 @@ class IOExportMadLoopUnitTest(IOTests.IOTestManager):
                                        exporters = 'default',
                                        orders = {'QCD': 2, 'QED': 2} )
 
-    def testIO_ProcOutputIOTests(self, load_only=False):
+    def testIO_UnitProcOutputIOTests(self, load_only=False):
       """ Run the iotests """
       
       self.load_IOTestsUnit()      
@@ -242,7 +242,7 @@ class IOTestMadLoopSquaredOrdersExport(IOTests.IOTestManager):
     @IOTests.set_global(unitary=False)
     @IOTests.createIOTest(groupName='LoopSquaredOrder_IOTest')
     def testIO_Loop_sqso_uux_ddx(self):
-        """ target: [loop_matrix(.*)\.f]
+        r""" target: [loop_matrix(.*)\.f]
                     [write_mp_compute_loop_coefs(.*)\.f]
                     [mp_helas_calls(.*)\.f]
                     [helas_calls(.*)\.f]

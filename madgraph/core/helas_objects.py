@@ -31,6 +31,7 @@ import math
 
 import aloha
 
+import madgraph
 import madgraph.core.base_objects as base_objects
 import madgraph.core.diagram_generation as diagram_generation
 import madgraph.core.color_amp as color_amp
@@ -44,6 +45,9 @@ import six
 from six.moves import range
 from six.moves import zip
 from functools import reduce
+
+if madgraph.ordering:
+    set = misc.OrderedSet
 
 #===============================================================================
 # 
@@ -596,6 +600,7 @@ class HelasWavefunction(base_objects.PhysicsObject):
         self['inter_color'] = None
         self['lorentz'] = []
         self['coupling'] = ['none']
+        self['coup_deps'] = [] # check which type of dependencies for running for each coupling
         # The color index used in this wavefunction
         self['color_key'] = 0
         # Properties relating to the leg/vertex
@@ -888,6 +893,7 @@ class HelasWavefunction(base_objects.PhysicsObject):
                isinstance(value, int) and \
                isinstance(arguments[2], base_objects.Model):
             model = arguments[2]
+            self.model = model
             if name == 'interaction_id':
                 self.set('interaction_id', value)
                 if value > 0:
@@ -904,6 +910,10 @@ class HelasWavefunction(base_objects.PhysicsObject):
                         self.set('lorentz', [inter.get('lorentz')[0]])
                     if inter.get('couplings'):
                         self.set('coupling', [list(inter.get('couplings').values())[0]])
+                        #self.set('coup_deps', [model.get('coupling_dep')[c[1:]] if c.startswith('-') else model.get('coupling_dep')[c] for c in self.get('coupling')])
+                        #misc.sprint(self.get('coupling'), self.get('coup_deps'))
+                        
+
                 return True
             elif name == 'particle':
                 self.set('particle', model.get('particle_dict')[value])
@@ -963,10 +973,6 @@ class HelasWavefunction(base_objects.PhysicsObject):
             return False
         
     
-        
-        
-
-
     def get_analytic_info(self, info, alohaModel=None):
         """ Returns a given analytic information about this loop wavefunction or
         its characterizing interaction. The list of available information is in
@@ -1012,6 +1018,7 @@ class HelasWavefunction(base_objects.PhysicsObject):
             aloha_info = self.get_aloha_info(True)
             # aloha_info[0] is the tuple of all lorent structures for this lwf,
             # aloha_info[1] are the tags and aloha_info[2] is the outgoing number.
+
             max_rank = max([ alohaModel.get_info('rank', lorentz,
                                  aloha_info[2], aloha_info[1], cached=True) 
                                                 for lorentz in aloha_info[0] ])
@@ -1566,6 +1573,7 @@ class HelasWavefunction(base_objects.PhysicsObject):
                     output['WF%d'%i]=output['WF%d'%i]+')'
                     
         #fixed argument
+        coupling_dep = self.model.get('coupling_dep')
         for i, coup in enumerate(self.get_with_flow('coupling')):
             # We do not include the - sign in front of the coupling of loop
             # wavefunctions (only the loop ones, the tree ones are treated normally)
@@ -1575,6 +1583,13 @@ class HelasWavefunction(base_objects.PhysicsObject):
                 output['coup%d'%i] = coup[1:] if coup.startswith('-') else coup  
             else:
                 output['coup%d'%i] = coup
+            c = output['coup%d'%i]
+            if c.startswith('-'):
+                c = c[1:]
+            if c in coupling_dep and 'aS' in coupling_dep[c]:
+                output['vec%d'%i] = "(ivec)"
+            else:
+                output['vec%d'%i] = ""
               
         output['out'] = self.get('me_id') - flip
         output['M'] = self.get('mass')
@@ -2537,6 +2552,7 @@ class HelasAmplitude(base_objects.PhysicsObject):
         self['inter_color'] = None
         self['lorentz'] = []
         self['coupling'] = ['none']
+        self['coup_deps'] = []
         # The Lorentz and color index used in this amplitude
         self['color_key'] = 0
         # Properties relating to the vertex
@@ -2758,6 +2774,9 @@ class HelasAmplitude(base_objects.PhysicsObject):
                         self.set('lorentz', [inter.get('lorentz')[0]])
                     if inter.get('couplings'):
                         self.set('coupling', [list(inter.get('couplings').values())[0]])
+                        self.model = arguments[2]
+                        
+                        
                 return True
             else:
                 six.reraise(self.PhysicsObjectError( "%s not allowed name for 3-argument set", name))
@@ -3181,8 +3200,18 @@ class HelasAmplitude(base_objects.PhysicsObject):
                     output['WF%d' % i ] = '(1,WE(%d))'%nb                    
                 
         #fixed argument
+        coupling_dep = self.model.get('coupling_dep')
         for i, coup in enumerate(self.get('coupling')):
             output['coup%d'%i] = str(coup)
+            c = output['coup%d'%i]
+            if c.startswith('-'):
+                c = c[1:]
+
+            if coupling_dep and 'aS' in coupling_dep[c]:
+                output['vec%d'%i] = "(ivec)"
+            else:
+                output['vec%d'%i] = ""
+
 
         output['out'] = self.get('number') - flip
         output['propa'] = ''
@@ -3787,7 +3816,8 @@ class HelasMatrixElement(base_objects.PhysicsObject):
     def reuse_outdated_wavefunctions(self, helas_diagrams):
         """change the wavefunctions id used in the writer to minimize the 
            memory used by the wavefunctions."""
-           
+        
+
         if not self.optimization:
             for diag in helas_diagrams:
                 for wf in diag['wavefunctions']:
@@ -3817,7 +3847,7 @@ class HelasMatrixElement(base_objects.PhysicsObject):
         last=collections.defaultdict(list)
         for nb, pos in last_lign.items():
             last[pos].append(nb)
-        tag = list(set(list(last.keys())+list(first.keys()))) 
+        tag = misc.make_unique(list(last.keys())+list(first.keys()))
         tag.sort() #lines number where something happen (new in/out) 
 
         # Create the replacement id dictionary
@@ -4766,6 +4796,8 @@ class HelasMatrixElement(base_objects.PhysicsObject):
         return itertools.product(*hel_per_part)
 
 
+
+
     def get_hel_avg_factor(self):
         """ Calculate the denominator factor due to the average over initial
         state spin only """
@@ -4794,6 +4826,20 @@ class HelasMatrixElement(base_objects.PhysicsObject):
         
         return hel_per_part
 
+    def get_spin_state(self):
+        """Gives (number of state for each initial particle)"""
+
+        model = self.get('processes')[0].get('model')
+        legs = [leg for leg in self.get('processes')[0].get('legs')]
+        hel_per_part = [ len(leg.get('polarization')) if leg.get('polarization') 
+                        else len(model.get('particle_dict')[\
+                                  leg.get('id')].get_helicity_states())
+            for leg in legs]
+        
+        if len(hel_per_part) == 1:
+            hel_per_part.append(0)
+            
+        return hel_per_part
 
     def get_beams_hel_avg_factor(self):
         """ Calculate the denominator factor due to the average over initial
@@ -5016,7 +5062,7 @@ class HelasMatrixElement(base_objects.PhysicsObject):
         if output == str:
             return [ [t] if not t.startswith('-') else [t[1:]] for t2 in tmp for t in t2]
         elif output=="set":
-            return set(sum([ [t] if not t.startswith('-') else [t[1:]] for t2 in tmp for t in t2],[]))
+            return misc.make_unique(sum([ [t] if not t.startswith('-') else [t[1:]] for t2 in tmp for t in t2],[]))
 
 
     def get_mirror_processes(self):
@@ -5397,7 +5443,7 @@ class HelasDecayChainProcess(base_objects.PhysicsObject):
 
             decay_lists = []
             # Loop over unique final state particle ids
-            for fs_id in set(fs_ids):
+            for fs_id in misc.make_unique(fs_ids):
                 # decay_list has the leg numbers and decays for this
                 # fs particle id:
                 # decay_list = [[[n1,d1],[n2,d2]],[[n1,d1'],[n2,d2']],...]
@@ -5420,6 +5466,15 @@ class HelasDecayChainProcess(base_objects.PhysicsObject):
                     for index in fs_indices[fs_id]:
                         chains.append([me for me in decay_elements[index] if me.get('processes')[0].\
                                              get_initial_ids()[0] == fs_id])
+                elif (len(fs_legs) == len(decay_elements) and \
+                     all(len(d)==1 for d in decay_is_ids) and \
+                     sorted(fs_ids) == sorted([d[0] for d in decay_is_ids])):
+                    # this cover the out of order case where only one particle is decaying in each
+                    for index in range(len(decay_elements)):
+                        out = [me for me in decay_elements[index] if me.get('processes')[0].\
+                                             get_initial_ids()[0] == fs_id]
+                        if out:
+                            chains.append(out)
 
                 if len(fs_legs) != len(decay_elements) or not chains or not chains[0]:
                     # In second case, or no chains are found
@@ -5442,7 +5497,6 @@ class HelasDecayChainProcess(base_objects.PhysicsObject):
                         combine = False
 
                 red_decay_chains = []
-
                 for prod in itertools.product(*chains):
                     # Now, need to ensure that we don't append
                     # duplicate chain combinations, e.g. (a>bc, a>de) and
@@ -5494,7 +5548,7 @@ class HelasDecayChainProcess(base_objects.PhysicsObject):
                                         replace('Process: ', '') \
                                         for d in decay_dict.values()])))
                 
-                for fs_id in set(fs_ids):
+                for fs_id in misc.make_unique(fs_ids):
                     if fs_pols_dict[fs_id]:
                         if hasattr(matrix_element,'ordering_for_pol'):
                             matrix_element.ordering_for_pol[fs_id] = ordered_for_pol
@@ -5619,7 +5673,7 @@ class HelasMultiProcess(base_objects.PhysicsObject):
         for me in self.get('matrix_elements'):
             helas_list.extend(me.get_used_lorentz())
                 
-        return list(set(helas_list))
+        return misc.make_unique(helas_list)
 
     def get_used_couplings(self):
         """Return a list with all couplings used by this
@@ -5630,7 +5684,7 @@ class HelasMultiProcess(base_objects.PhysicsObject):
         for me in self.get('matrix_elements'):
             coupling_list.extend([c for l in me.get_used_couplings() for c in l])
         
-        return list(set(coupling_list))
+        return misc.make_unique(coupling_list)
     
     def get_matrix_elements(self):
         """Extract the list of matrix elements"""
@@ -5790,13 +5844,12 @@ class HelasMultiProcess(base_objects.PhysicsObject):
                         matrix_element_list.append(matrix_element)
                         if combine_matrix_elements:
                             amplitude_tags.append(amplitude_tag)
-                            identified_matrix_elements.append(matrix_element)
+                            identified_matrix_elements.append(matrix_element.get('processes'))
                             permutations.append(amplitude_tag[-1][0].\
                                                 get_external_numbers())
                     else: # try
                         # Identical matrix element found
-                        other_processes = identified_matrix_elements[me_index].\
-                                          get('processes')
+                        other_processes = identified_matrix_elements[me_index]
                         # Reorder each of the processes
                         # Since decay chain, only reorder legs_with_decays
                         for proc in matrix_element.get('processes'):
@@ -5836,15 +5889,15 @@ class HelasMultiProcess(base_objects.PhysicsObject):
                         # Keep track of amplitude tags
                         if combine_matrix_elements:
                             amplitude_tags.append(amplitude_tag)
-                            identified_matrix_elements.append(me)
+                            identified_matrix_elements.append(me.get('processes'))
                             permutations.append(amplitude_tag[-1][0].\
                                                 get_external_numbers())
                     else:
                         matrix_element_list = []
                 else:
                     # Identical matrix element found
-                    other_processes = identified_matrix_elements[me_index].\
-                                      get('processes')
+                    other_processes = identified_matrix_elements[me_index]
+                                      
                     
                     other_processes.append(cls.reorder_process(\
                         amplitude.get('process'),

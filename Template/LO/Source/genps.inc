@@ -29,8 +29,8 @@ c      parameter (max_host=99,maxplace=199,maxpoints=100,maxans=50)
 c*************************************************************************
 c	Parameters for helicity sums in matrixN.f
 c*************************************************************************
-      REAL*8 LIMHEL
-      PARAMETER(LIMHEL=1e-8)
+c      REAL*8 LIMHEL
+c      PARAMETER(LIMHEL=1e-8) -> pass in the run_card.dat
       INTEGER MAXTRIES
       PARAMETER(MAXTRIES=25)
 C     To pass the helicity configuration chosen by the DiscreteSampler to 
@@ -38,6 +38,10 @@ C     matrix<i>.f
       double precision hel_jacobian
 	  INTEGER HEL_PICKED
 	  COMMON/HEL_PICKED/HEL_PICKED,hel_jacobian
+	  integer ee_picked
+c same for MC for ee case	  
+	  double precision ee_jacobian
+	  COMMON/EE_PICKED/EE_PICKED,ee_jacobian
 c**********************************************************************************
 c       parameters to control is zero-cross section is due to PS or matrix-element
 c**********************************************************************************

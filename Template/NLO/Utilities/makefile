@@ -5,17 +5,20 @@ INCLUDE=-I../SubProcesses/$(P01)
 EXTRAW=-I../Source
 FF=gfortran -g -fno-automatic -ffixed-line-length-132 $(INCLUDE) $(EXTRAW) 
 FILES=handling_lhe_events.o fill_MC_mshell.o extra_weights.o
-FILES2=madfks_plot.o setcuts.o open_output_files.o appl_interface_dummy.o
+FILES2=madfks_plot.o setcuts.o open_output_files.o pineappl_interface_dummy.o
 TDFILES=dbook.o open_output_files_dummy_td.o 
 HWUFILES=HwU.o open_output_files_dummy_HwU.o 
 
 %.o : %.f
 	$(FF) -c $<
 
+%.o : %.for
+	$(FF) -c $<
+
 all: check_events combine_plots compare_events merge_events plot_events \
 	plot_events_lhef select_events split_events sum_plots uncertainties
 
-check_events : $(FILES) check_events.o dbook.o appl_interface_dummy.o
+check_events : $(FILES) check_events.o dbook.o pineappl_interface_dummy.o orderstags_glob.o
 	$(FF) $^ -o $@
 
 combine_plots : combine_plots.o
@@ -34,6 +37,9 @@ plot_events_HwU : $(FILES) $(FILES2) $(HWUFILES) plot_events.o analysis_HwU_pp_l
 	$(FF) $^ -o $@
 
 plot_events_lhef : $(FILES) $(FILES2) plot_events_lhef.o
+	$(FF) $^ -o $@
+
+readfort90n : readfort90n.o mcatnlo_hbook_gfortran.o
 	$(FF) $^ -o $@
 
 select_events : $(FILES) select_events.o

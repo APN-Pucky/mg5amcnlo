@@ -1,8 +1,8 @@
 from __future__ import division
 
 from __future__ import absolute_import
-from __future__ import print_function
 import itertools
+import filecmp
 import xml.etree.ElementTree as ET
 import math
 
@@ -30,8 +30,13 @@ class InvalidParamCard(Exception):
     """ a class for invalid param_card """
     pass
 
+class InvalidParam(Exception):
+    """ a class for invalid parameter input """
+    pass
+
 class Parameter (object):
     """A class for a param_card parameter"""
+
     
     def __init__(self, param=None, block=None, lhacode=None, value=None, comment=None):
         """Init the parameter"""
@@ -72,11 +77,15 @@ class Parameter (object):
             data = data[:position] + [' '.join(data[position:])] 
         if not len(data):
             return
+        
         try:
             self.lhacode = tuple([int(d) for d in data[:-1]])
         except Exception:
             self.lhacode = tuple([int(d) for d in data[:-1] if d.isdigit()])
             self.value= ' '.join(data[len(self.lhacode):])
+            # check that lhacode are the first entry otherwise return invalid param.
+            if ' '.join([str(i) for i in self.lhacode]) != ' '.join(data[:len(self.lhacode)]):
+                raise InvalidParam("line was %s" % str(data))
         else:
             self.value = data[-1]
         
@@ -127,6 +136,7 @@ class Parameter (object):
         if not precision:
             precision = 6
         
+        self.comment = self.comment.strip()
         if format == 'float':
             if self.lhablock == 'decay' and not isinstance(self.value,six.string_types):
                 return 'DECAY %s %.{0}e # %s'.format(precision) % (' '.join([str(d) for d in self.lhacode]), self.value, self.comment)
@@ -269,8 +279,8 @@ class Block(list):
                 self.name += ' %s' % data[2]
         elif len(data) == 4 and data[2] == 'q=':
             #the last part should be of the form Q=
-            self.scale = float(data[3])                
-            
+            self.scale = float(data[3])  
+                          
         return self
     
     def keys(self):
@@ -389,8 +399,12 @@ class ParamCard(dict):
             else:
                 param = Parameter()
                 param.set_block(cur_block.name)
-                param.load_str(line)
-                cur_block.append(param)
+                try:
+                    param.load_str(line)
+                except InvalidParam:
+                    logger.warning("Block \"%s\" has line \"%s\" that is not in slha1 format: line is ignored" %(cur_block.name, line))
+                else:
+                    cur_block.append(param)
                   
         return self
     
@@ -560,6 +574,13 @@ class ParamCard(dict):
                     lhacode = ' '.join([str(i) for i in lhacode])
                     diff += 'set param_card %s %s %s # orig: %s\n' % \
                                        (blockname, lhacode , new_value, value)
+            value = block.scale
+            new_value = new_card[blockname].scale
+            if not misc.equal(value, new_value, 6, zero_limit=False):
+                diff += 'set param_card %s scale %s # orig: %s\n' % \
+                                       (blockname , new_value, value)
+
+
         return diff 
 
     
@@ -621,11 +642,19 @@ class ParamCard(dict):
         
     def write_inc_file(self, outpath, identpath, default, need_mp=False):
         """ write a fortran file which hardcode the param value"""
-        
+
         self.secure_slha2(identpath)
-        
-        
-        fout = file_writers.FortranWriter(outpath)
+        input_inc = pjoin(os.path.dirname(outpath),'MODEL', 'input.inc')
+
+        #check if we need to write the value of scale for some block
+        if os.path.exists(input_inc):
+            text = open(input_inc).read()
+            scales = list(set(re.findall(r'mdl__(\w*)__scale', text, re.I)))
+        else: 
+            scales = []
+
+            
+        fout = file_writers.FortranWriter(outpath+'.tmp')
         defaultcard = ParamCard(default)
         for line in open(identpath):
             if line.startswith('c  ') or line.startswith('ccccc'):
@@ -640,8 +669,16 @@ class ParamCard(dict):
                 try:
                     value = self[block].get(tuple(lhaid)).value
                 except KeyError:
-                    value =defaultcard[block].get(tuple(lhaid)).value
-                    logger.warning('information about \"%s %s" is missing using default value: %s.' %\
+                    if lhaid == [0]:
+                        try:
+                            value = self[block].scale
+                        except KeyError:
+                            value = defaultcard[block].scale
+                            logger.warning('information about scale of \"%s\" is missing using default value: %s.' %\
+                                                          (block, value))
+                    else:
+                        value =defaultcard[block].get(tuple(lhaid)).value
+                        logger.warning('information about \"%s %s" is missing using default value: %s.' %\
                                                           (block, lhaid, value))
             else:
                
@@ -663,6 +700,17 @@ class ParamCard(dict):
             fout.writelines(' %s = %s' % (variable, ('%e'%float(value)).replace('e','d')))
             if need_mp:
                 fout.writelines(' mp__%s = %s_16' % (variable, value))
+                
+        for block in scales:
+            value = self[block].scale
+            fout.writelines(' mdl__%s__scale = %s' % (block, ('%e'%float(value)).replace('e','d')))
+
+        fout.close()
+        # compare if we need to update the file (allowing to skip some recompilation)
+        if not os.path.exists(outpath) or not filecmp.cmp(outpath+'.tmp', outpath):
+            shutil.move(outpath+'.tmp', outpath)
+        else:
+            os.remove(outpath+'.tmp')
       
     def convert_to_complex_mass_scheme(self):
         """ Convert this param_card to the convention used for the complex mass scheme:
@@ -878,34 +926,8 @@ class ParamCardMP(ParamCard):
     def write_inc_file(self, outpath, identpath, default):
         """ write a fortran file which hardcode the param value"""
         
-        fout = file_writers.FortranWriter(outpath)
-        defaultcard = ParamCard(default)
-        for line in open(identpath):
-            if line.startswith('c  ') or line.startswith('ccccc'):
-                continue
-            split = line.split()
-            if len(split) < 3:
-                continue
-            block = split[0]
-            lhaid = [int(i) for i in split[1:-1]]
-            variable = split[-1]
-            if block in self:
-                try:
-                    value = self[block].get(tuple(lhaid)).value
-                except KeyError:
-                    value =defaultcard[block].get(tuple(lhaid)).value
-            elif block == 'loop' and lhaid == [1]:
-                try:
-                    value =defaultcard[block].get(tuple(lhaid)).value
-                except:
-                    value = 9.1188    
-            else:
-                value =defaultcard[block].get(tuple(lhaid)).value
-            #value = str(value).lower()
-            fout.writelines(' %s = %s' % (variable, ('%e' % value).replace('e','d')))
-            fout.writelines(' %s%s = %s_16' % (self.mp_prefix, 
-                variable, ('%e' % value)))
-
+        return super(ParamCardMP, self).write_inc_file(outpath, identpath, default, need_mp=True)
+        
 
   
     
@@ -976,13 +998,14 @@ class ParamCardIterator(ParamCard):
         for key in keys:
             for param, values in all_iterators[key]:
                 self.param_order.append("%s#%s" % (param.lhablock, '_'.join(repr(i) for i in param.lhacode)))
-            
         # do the loop
         lengths = [list(range(len(all_iterators[key][0][1]))) for key in keys]
-        for positions in itertools.product(*lengths):
+        from functools import reduce
+        total = reduce((lambda x, y: x * y),[len(x) for x in lengths])
+        for i,positions in enumerate(itertools.product(*lengths)):
             self.itertag = []
             if self.logging:
-                logger.info("Create the next param_card in the scan definition", '$MG:BOLD')
+                logger.info("Create the next param_card in the scan definition (%s/%s)" % (i+1,total), '$MG:BOLD')
             for i, pos in enumerate(positions):
                 key = keys[i]
                 for param, values in all_iterators[key]:
@@ -1019,9 +1042,13 @@ class ParamCardIterator(ParamCard):
 
     def write_summary(self, path, order=None, lastline=False, nbcol=20):
         """ """
-        
+
         if path:
             ff = open(path, 'w')
+            path_events = path.rsplit("/", 1)[0]
+            identCard = open(pjoin(path.rsplit("/", 2)[0], "Cards", "ident_card.dat"))
+            identLines = identCard.readlines()
+            identCard.close()
         else:
             ff = StringIO.StringIO()        
         if order:
@@ -1045,24 +1072,39 @@ class ParamCardIterator(ParamCard):
             ff.write(formatting % tuple(['run_name'] + self.param_order + keys))
         formatting = "%s%s%s\n" %('%%-%is ' % (nbcol), ('%%-%ie ' % (nbcol))* len(self.param_order),
                                              ('%%-%ie ' % (nbcol))* len(keys))
-      
+
+        ident = {}
+        for identLine in identLines:
+            identLine = identLine.strip()
+            try:
+                identBlock = identLine.split(" ")[0]
+                identPid = identLine.split(" ")[1]
+                identVar = identLine.split(" ")[2].lower()
+                if identVar.startswith("mdl_"):
+                    identVar = identVar.replace("mdl_", "", 1)
+                ident['{0}#{1}'.format(identBlock, identPid)] = identVar
+            except:
+                continue
 
         if not lastline:
             to_print = self.cross
         else:
             to_print = self.cross[-1:]
-
         for info in to_print:
             name = info['run_name']
-            bench = info['bench']
+            bench = [float(x) for x in info['bench']]
             data = []
             for k in keys:
                 if k in info:
-                    data.append(info[k])
+                    data.append(float(info[k]))
                 else:
                     data.append(0.)
             ff.write(formatting % tuple([name] + bench + data))
-                
+            ff_single = open(pjoin(path_events, name, "params.dat"), "w")
+            for i_bench in range(0, len(bench)):
+                ff_single.write(ident[self.param_order[i_bench]] + " = " + str(bench[i_bench]) +"\n")
+            ff_single.close()
+
         if not path:
             return ff.getvalue()
         

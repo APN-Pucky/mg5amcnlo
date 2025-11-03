@@ -40,8 +40,8 @@ def read_from_file(filename, myfunct, *args, **opt):
             ret_value = myfunct(sock, *args)
         finally:
             sock.close()
-    except IOError as xxx_todo_changeme:
-        (errno, strerror) = xxx_todo_changeme.args
+    except IOError as error:
+        errno, strerror = error.errno, str(error)
         if 'print_error' in opt:
             if not opt['print_error']:
                 return None
@@ -147,9 +147,14 @@ def cp(path1, path2, log=True, error=False):
     path2 = format_path(path2)
     try:
         shutil.copy(path1, path2)
+    except shutil.Error as why:
+        logger.debug('no cp since identical: %s', why)
+        return
     except IOError as why:
         import madgraph.various.misc as misc
         try: 
+            if 'same file' in  str(why):
+                return
             if os.path.exists(path2):
                 path2 = os.path.join(path2, os.path.split(path1)[1])
             misc.copytree(path1, path2)
@@ -157,12 +162,10 @@ def cp(path1, path2, log=True, error=False):
             if error:
                 raise
             if log:
-                logger.warning(why)
+                logger.warning("fail to cp", path1, path2, why)
             else:
-                misc.sprint("fail to cp", why)
-    except shutil.Error:
-        # idetical file
-        pass
+                misc.sprint("fail to cp",path1,path2, why)
+
 
 def rm(path, log=True):
     """removes path, that can be a single element or a list"""

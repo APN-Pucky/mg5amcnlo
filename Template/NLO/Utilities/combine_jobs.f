@@ -5,7 +5,7 @@ C updating the weight of each event, reflecting the relative number of
 C events requested in the splits.
       implicit none
       include 'max_split.inc'
-      character*140 buff
+      character*1000 buff
       character*10 filename
       character*14 filename2
       integer i,j,tot_evts,nevts(max_split),idummy,njobs
@@ -20,7 +20,8 @@ C events requested in the splits.
       INTEGER NUP,IDPRUP,IDUP(MAXNUP),ISTUP(MAXNUP),
      # MOTHUP(2,MAXNUP),ICOLUP(2,MAXNUP)
       DOUBLE PRECISION XWGTUP,SCALUP,AQEDUP,AQCDUP,
-     # PUP(5,MAXNUP),VTIMUP(MAXNUP),SPINUP(MAXNUP)
+     # PUP(5,MAXNUP),VTIMUP(MAXNUP),SPINUP(MAXNUP),
+     # SCALUP_a(MAXNUP,MAXNUP)
       logical done
       data done/.false./
 
@@ -81,11 +82,13 @@ c but then the 'njobs=i-1' below is not correct).
          do j=1,nevts(i)
             call read_lhef_event(2,
      &           NUP,IDPRUP,XWGTUP,SCALUP,AQEDUP,AQCDUP,
-     &           IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,buff)
+     &           IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,
+     &           buff,SCALUP_a)
             XWGTUP=XWGTUP*wgt_fact(i)
             call write_lhef_event(99,
      &           NUP,IDPRUP,XWGTUP,SCALUP,AQEDUP,AQCDUP,
-     &           IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,buff)
+     &           IDUP,ISTUP,MOTHUP,ICOLUP,PUP,VTIMUP,SPINUP,
+     &           buff,SCALUP_a)
          enddo
          close(2,status='delete')
       enddo

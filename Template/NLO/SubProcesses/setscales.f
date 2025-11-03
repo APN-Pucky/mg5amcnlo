@@ -56,7 +56,8 @@ c (mostly in run.inc, and one  in coupl.inc)
       include "nexternal.inc"
       include "run.inc"
       include "coupl.inc"
-
+      include "timing_variables.inc"
+      
       double precision xp(0:3,nexternal)
       double precision dummy,dummyQES,dummies(2)
       integer i,j
@@ -72,6 +73,7 @@ c put momenta in common block for couplings.f
       logical firsttime
       data firsttime/.true./
 
+      call cpu_time(tBefore)
 c
       if (firsttime) then
         firsttime=.false.
@@ -149,6 +151,9 @@ c Pass momenta to couplings.f
 cc         call setpara('param_card.dat')
       endif
 
+      call cpu_time(tAfter)
+      t_coupl=t_coupl+(tAfter-tBefore)
+      
  200  format(1x,a,2(1x,d12.6),2x,f4.2)
 
       return
@@ -214,6 +219,7 @@ c a scale to be used as a reference for renormalization scale
       include 'nexternal.inc'
       include 'run.inc'
       include 'cuts.inc'
+      include 'orders.inc'
       double precision muR_ref_dynamic,pp(0:3,nexternal)
       double precision tmp,scale_global_reference,pt,et,dot,sumdot
       external pt,et,dot,sumdot
@@ -235,6 +241,7 @@ c FxFx
       double precision FxFx_ren_scales(0:nexternal),FxFx_fac_scale(2)
       common/c_FxFx_scales/FxFx_ren_scales,nFxFx_ren_scales
      $     ,FxFx_fac_scale
+      integer bpower
 c
       tmp=0
       if (nincoming.eq.1) then
@@ -242,26 +249,24 @@ c
          temp_scale_id='Mass of decaying particle'
       elseif(ickkw.eq.3)then
 c FxFx merging scale:
-c     Note that nFxFx_ren_scales includes the one scale that corresponds
-c     to the real-emission one (and is zero for the n-body conf.). Skip
-c     that scale here.
-         if (nint(wgtbpower).gt.nFxFx_ren_scales-1) then
+         bpower=born_orders(qcd_pos)/2
+         if (bpower.gt.nFxFx_ren_scales) then
 c For processes that have alpha_S to some (non-zero) power at the lowest
 c multiplicity Born, use the transverse mass of that system for those
 c alpha_S
             tmp=FxFx_ren_scales(0)**
-     &           (nint(wgtbpower)-(nFxFx_ren_scales-1))
-         elseif(nint(wgtbpower).eq.0) then
+     &           (bpower-(nFxFx_ren_scales))
+         elseif(bpower.eq.0) then
 c lowest multiplicity for processes without QCD use the transverse mass
-c of the colorless system (as returned by setclscales)
+c of the colorless system (as returned by clustering)
             tmp=FxFx_ren_scales(0)
          else
             tmp=1d0
          endif
-         do i=2,nFxFx_ren_scales
+         do i=1,nFxFx_ren_scales
             tmp=tmp*FxFx_ren_scales(i)
          enddo
-         tmp=tmp**(1d0/max(wgtbpower,1d0))
+         tmp=tmp**(1d0/max(dble(bpower),1d0))
          temp_scale_id='FxFx merging scale'
       elseif(imurtype.eq.1)then
         tmp=scale_global_reference(pp)
@@ -271,6 +276,11 @@ c of the colorless system (as returned by setclscales)
         enddo
         temp_scale_id='sum_i pT(i), i=final state'
       elseif(imurtype.eq.3)then
+
+         write (*,*) "imurtype=3 not possible in setscales.f: "/
+     $        /"need to check number of Born orders."
+         stop 1
+         
 c geometric mean (to reweight alphaS)
          tmp1=0d0
          tmp2=1d0
@@ -527,6 +537,8 @@ c a scale to be used as a reference for renormalization scale
       integer i,j
       character*80 temp_scale_id
       common/ctemp_scale_id/temp_scale_id
+      double precision user_dynamical_scale
+      external user_dynamical_scale
 c
       tmp=0
       if(ickkw.eq.-1)then
@@ -557,21 +569,18 @@ c         m^2+pt^2=p(0)^2-p(3)^2=(p(0)+p(3))*(p(0)-p(3))
           enddo
           tmp=tmp/2d0
           temp_scale_id='H_T/2 := sum_i mT(i)/2, i=final state'
-      elseif(dynamical_scale_choice.eq.0) then
-c         fixed scale
+       elseif(dynamical_scale_choice.eq.-2) then
+c     fixed scale
           tmp=muR_ref_fixed
-          temp_scale_id='fixed scale'
-      elseif(dynamical_scale_choice.eq.10) then
+          temp_scale_id='fixed scale'          
+      elseif(dynamical_scale_choice.eq.10.or.dynamical_scale_choice.eq.0) then
 ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cc      USER-DEFINED SCALE: ENTER YOUR CODE HERE                                 cc
 cc      to use this code you must set                                            cc
 cc                 dynamical_scale_choice = 10                                   cc
 cc      in the run_card (run_card.dat)                                           cc
 ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-         write(*,*) "User-defined scale not set"
-         stop 1
-         temp_scale_id='User-defined dynamical scale' ! use a meaningful string
-         tmp = 0d0
+         tmp = user_dynamical_scale(PP)
 ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 cc      USER-DEFINED SCALE: END OF USER CODE                                     cc
 ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc

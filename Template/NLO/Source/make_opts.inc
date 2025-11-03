@@ -9,7 +9,7 @@ DEFAULT_CPP_COMPILER = g++
 # Rest of the makefile
 ifeq ($(origin FFLAGS),undefined)
   #FFLAGS= -O -w
-  FFLAGS = -O -fno-automatic
+  FFLAGS = -O 
   #FFLAGS+= -g -fbounds-check -ffpe-trap=invalid,zero,overflow,underflow,denormal -Wall
 endif
 
@@ -19,6 +19,11 @@ ifneq ($(UNAME), Darwin)
     MACFLAG=  
 endif
 
+
+# add -fPIC for EW sudakov Standalone
+ifdef ewsudsa
+  FFLAGS+= -fPIC
+endif
 
 ifeq ($(origin CXXFLAGS),undefined)
   #CXXFLAGS= -g 
@@ -37,6 +42,8 @@ endif
 
 # Increase the number of allowed charcters in a Fortran line
 FFLAGS+= -ffixed-line-length-132
+# ensure that no-automatic is done
+FFLAGS+= -fno-automatic
 
 # Set FC unless it's defined by an environment variable
 ifeq ($(origin FC),default)
@@ -93,6 +100,15 @@ ifneq ($(lhapdf),)
   endif
   llhapdf = $(shell $(lhapdf) --libs)
   reweight_xsec_events_pdf_dummy=
+
+else ifneq ($(epdf),)
+# option eMELA/ePDF
+EPDFLIBS=$(shell $(epdf) --ldflags)
+alfas_functions=alfas_functions
+CXX=$(DEFAULT_CPP_COMPILER) -std=c++11
+llhapdf = $(shell $(epdf) --ldflags)
+# Add also LHAPDF to the libraries to be linked
+llhapdf+= -lLHAPDF
 else
   alfas_functions=alfas_functions
   llhapdf=
@@ -105,20 +121,22 @@ ifeq ($(origin CXX),default)
 endif
 
 
-# Option APPLGrid
-ifneq ($(applgrid),)
-  APPLLIBS=$(shell applgrid-config --ldcflags) $(shell amcfast-config --ldflags)
-  applgrid_interface=appl_interface.o
+
+# Option PineAPPL
+ifneq ($(pineappl),)
+  APPLLIBS=$(shell pkg-config pineappl_capi --libs)
+  CXXFLAGS+=$(shell pkg-config pineappl_capi --cflags)
+  pineappl_interface=pineappl_interface.o
 else
   APPLLIBS=
-  applgrid_interface=appl_interface_dummy.o
+  pineappl_interface=pineappl_interface_dummy.o
 endif
 
 # Madloop
 ifdef madloop
-  ifeq (,$(wildcard parton_lum_0.f)) # this is to skip ML for LOonly
-   libmadloop=libMadLoop.a
-   libcuttools=-lcts %(link_tir_libs)s
+  ifneq ("$(wildcard */loop_matrix.f)","") # this is to skip ML for LOonly
+    libmadloop=libMadLoop.a
+    libcuttools=-lcts %(link_tir_libs)s
   endif 
 else
   libmadloop=

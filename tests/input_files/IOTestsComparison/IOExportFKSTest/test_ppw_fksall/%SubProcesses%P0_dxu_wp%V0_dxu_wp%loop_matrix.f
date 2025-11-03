@@ -12,8 +12,8 @@ C     Returns amplitude squared summed/avg over colors
 C     and helicities for the point in phase space P(0:3,NEXTERNAL)
 C     and external lines W(0:6,NEXTERNAL)
 C     
-C     Process: d~ u > w+ QED<=1 WEIGHTED<=2 [ all = QCD ]
-C     Process: s~ c > w+ QED<=1 WEIGHTED<=2 [ all = QCD ]
+C     Process: d~ u > w+ [ all = QCD QED ] QCD^2<=2 QED^2<=2
+C     Process: s~ c > w+ [ all = QCD QED ] QCD^2<=2 QED^2<=2
 C     
 C     Modules
 C     
@@ -70,7 +70,7 @@ C
 C     These are constants related to the split orders
       INCLUDE 'nsqso_born.inc'
       INTEGER    NSO, NSQUAREDSO, NAMPSO
-      PARAMETER (NSO=1, NSQUAREDSO=1, NAMPSO=2)
+      PARAMETER (NSO=2, NSQUAREDSO=1, NAMPSO=2)
       INTEGER ANS_DIMENSION
       PARAMETER(ANS_DIMENSION=MAX(NSQSO_BORN,NSQUAREDSO))
       INTEGER NSQSOXNLG
@@ -214,6 +214,7 @@ C     GLOBAL VARIABLES
 C     
       INCLUDE 'process_info.inc'
       INCLUDE 'unique_id.inc'
+
       INCLUDE 'coupl.inc'
       INCLUDE 'mp_coupl.inc'
       INCLUDE 'MadLoopParams.inc'
@@ -245,7 +246,7 @@ C     A FLAG TO DENOTE WHETHER THE CORRESPONDING LOOPLIBS ARE
 C      AVAILABLE OR NOT
       LOGICAL LOOPLIBS_AVAILABLE(NLOOPLIB)
       DATA LOOPLIBS_AVAILABLE/.TRUE.,.FALSE.,.TRUE.,.FALSE.,.FALSE.
-     $ ,.TRUE.,.TRUE./
+     $ ,.FALSE.,.FALSE./
       COMMON/LOOPLIBS_AV/ LOOPLIBS_AVAILABLE
 C     A FLAG TO DENOTE WHETHER THE CORRESPONDING DIRECTION TESTS
 C      AVAILABLE OR NOT IN THE LOOPLIBS
@@ -656,6 +657,14 @@ C      helicity is asked
  101    CONTINUE
         CLOSE(1)
 
+        IF (.NOT.USELOOPFILTER) THEN
+          DO J=1,NLOOPGROUPS
+            DO I=1,NSQUAREDSO
+              GOODAMP(I,J)=.TRUE.
+            ENDDO
+          ENDDO
+        ENDIF
+
         IF (HELICITYFILTERLEVEL.EQ.0) THEN
           FOUNDHELFILTER=.TRUE.
           DO J=1,NCOMB
@@ -826,8 +835,6 @@ C     Make sure we start with empty caches
         CALL CLEAR_CACHES()
       ENDIF
 
-C     Now make sure to turn on the global COLLIER cache if applicable
-      CALL SET_COLLIER_GLOBAL_CACHE(.TRUE.)
 
       IF (IMPROVEPSPOINT.GE.0) THEN
 C       Make the input PS more precise (exact onshell and
@@ -1657,8 +1664,6 @@ C     Make sure that we finish by emptying caches
         CALL CLEAR_CACHES()
       ENDIF
 
-C     Now make sure to turn off the global COLLIER cache if applicable
-      CALL SET_COLLIER_GLOBAL_CACHE(.FALSE.)
 
       END
 
@@ -1670,8 +1675,6 @@ C      after
 C     ech event
 C     
       CALL CLEAR_TIR_CACHE()
-      CALL NINJA_CLEAR_INTEGRAL_CACHE()
-      CALL CLEAR_COLLIER_CACHE()
       END
 
 C     --=========================================--
@@ -2045,12 +2048,12 @@ C
 C     This functions returns the integer index identifying the split
 C      orders list passed in argument which correspond to the values
 C      of the following list of couplings (and in this order):
-C     ['QCD']
+C     ['QCD', 'QED']
 C     
 C     CONSTANTS
 C     
       INTEGER    NSO, NSQSO
-      PARAMETER (NSO=1, NSQSO=1)
+      PARAMETER (NSO=2, NSQSO=1)
 C     
 C     ARGUMENTS
 C     
@@ -2060,7 +2063,7 @@ C     LOCAL VARIABLES
 C     
       INTEGER I,J
       INTEGER SQPLITORDERS(NSQSO,NSO)
-      DATA (SQPLITORDERS(  1,I),I=  1,  1) /    2/
+      DATA (SQPLITORDERS(  1,I),I=  1,  2) /    2,    2/
       COMMON/ML5SQPLITORDERS/SQPLITORDERS
 C     
 C     BEGIN CODE
@@ -2078,6 +2081,47 @@ C
      $ //' ML5SOINDEX_FOR_SQUARED_ORDERS'
       WRITE(*,*) 'Could not find squared orders ',(ORDERS(I),I=1,NSO)
       STOP
+
+      END
+
+      INTEGER FUNCTION GETORDPOWFROMINDEX_ML5(IORDER, INDX)
+C     
+C     Return the power of the IORDER-th order appearing at position
+C      INDX
+C     in the split-orders output
+C     
+C     ['QCD', 'QED']
+C     
+C     CONSTANTS
+C     
+      INTEGER    NSO, NSQSO
+      PARAMETER (NSO=2, NSQSO=1)
+C     
+C     ARGUMENTS
+C     
+      INTEGER ORDERS(NSO)
+C     
+C     LOCAL VARIABLES
+C     
+      INTEGER I,J
+      INTEGER SQPLITORDERS(NSQSO,NSO)
+      DATA (SQPLITORDERS(  1,I),I=  1,  2) /    2,    2/
+C     
+C     BEGIN CODE
+C     
+      IF (IORDER.GT.NSO.OR.IORDER.LT.1) THEN
+        WRITE(*,*) 'INVALID IORDER ML5', IORDER
+        WRITE(*,*) 'SHOULD BE BETWEEN 1 AND ', NSO
+        STOP
+      ENDIF
+
+      IF (INDX.GT.NSQSO.OR.INDX.LT.1) THEN
+        WRITE(*,*) 'INVALID INDX ML5', INDX
+        WRITE(*,*) 'SHOULD BE BETWEEN 1 AND ', NSQSO
+        STOP
+      ENDIF
+
+      GETORDPOWFROMINDEX_ML5=SQPLITORDERS(INDX, IORDER)
 
       END
 
@@ -2153,7 +2197,7 @@ C
 C     CONSTANTS
 C     
       INTEGER    NSO, NSQUAREDSO, NAMPSO
-      PARAMETER (NSO=1, NSQUAREDSO=1, NAMPSO=2)
+      PARAMETER (NSO=2, NSQUAREDSO=1, NAMPSO=2)
 C     
 C     ARGUMENTS
 C     
@@ -2163,8 +2207,8 @@ C     LOCAL VARIABLES
 C     
       INTEGER I, SQORDERS(NSO)
       INTEGER AMPSPLITORDERS(NAMPSO,NSO)
-      DATA (AMPSPLITORDERS(  1,I),I=  1,  1) /    0/
-      DATA (AMPSPLITORDERS(  2,I),I=  1,  1) /    2/
+      DATA (AMPSPLITORDERS(  1,I),I=  1,  2) /    0,    1/
+      DATA (AMPSPLITORDERS(  2,I),I=  1,  2) /    2,    1/
       COMMON/ML5AMPSPLITORDERS/AMPSPLITORDERS
 C     
 C     FUNCTION
@@ -2187,12 +2231,12 @@ C
 C     This functions returns the orders identified by the squared
 C      split order index in argument. Order values correspond to
 C      following list of couplings (and in this order):
-C     ['QCD']
+C     ['QCD', 'QED']
 C     
 C     CONSTANTS
 C     
       INTEGER    NSO, NSQSO
-      PARAMETER (NSO=1, NSQSO=1)
+      PARAMETER (NSO=2, NSQSO=1)
 C     
 C     ARGUMENTS
 C     
@@ -2227,12 +2271,12 @@ C
 C     This functions returns the orders identified by the split order
 C      index in argument. Order values correspond to following list of
 C      couplings (and in this order):
-C     ['QCD']
+C     ['QCD', 'QED']
 C     
 C     CONSTANTS
 C     
       INTEGER    NSO, NAMPSO
-      PARAMETER (NSO=1, NAMPSO=2)
+      PARAMETER (NSO=2, NAMPSO=2)
 C     
 C     ARGUMENTS
 C     
@@ -2269,12 +2313,12 @@ C     This functions returns the integer index identifying the
 C      amplitude split orders passed in argument which correspond to
 C      the values of the following list of couplings (and in this
 C      order):
-C     ['QCD']
+C     ['QCD', 'QED']
 C     
 C     CONSTANTS
 C     
       INTEGER    NSO, NAMPSO
-      PARAMETER (NSO=1, NAMPSO=2)
+      PARAMETER (NSO=2, NAMPSO=2)
 C     
 C     ARGUMENTS
 C     

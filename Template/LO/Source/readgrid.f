@@ -4,8 +4,9 @@ C...READGRID reads the IS Sudakov grid for all flavors from a file
 
 c...global variables
       include 'sudgrid.inc'
-      include 'pdf.inc'
+      include 'PDF/pdf.inc'
       include 'maxparticles.inc'
+      include 'vector.inc'
       include 'run.inc'
 
 c...arguments
